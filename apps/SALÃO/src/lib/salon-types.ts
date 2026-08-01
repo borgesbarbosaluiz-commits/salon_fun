@@ -164,6 +164,8 @@ export interface ClientAppConfig {
   cancelWindowHours: number;
   autoCancelMinutes: number;
   welcomeMessage: string;
+  whiteLabelActive?: boolean;
+  customDomain?: string;
   supportPhone: string;
   address: string;
   inviteCode: string;

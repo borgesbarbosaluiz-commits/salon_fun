@@ -1,54 +1,103 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
+
 import { PageHeader, StatCard } from "@/components/dashboard/primitives";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { brl, formatDateBR, uid, useSalon } from "@/lib/salon-store";
 import { today } from "@/lib/salon-seed";
-import type { Professional } from "@/lib/salon-types";
+import { brl, formatDateBR, useSalon } from "@/lib/salon-store";
+import type { Block, Professional } from "@/lib/salon-types";
 
 export const Route = createFileRoute("/dashboard/gestao/profissionais")({
-  component: Equipe,
+  component: TeamPage,
 });
 
-const days = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+const weekDays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
-function Equipe() {
-  const { professionals, services, blocks, appointments, update } = useSalon();
+function createEmptyProfessional(): Professional {
+  return {
+    active: true,
+    commission: 40,
+    endTime: "19:00",
+    id: "",
+    name: "",
+    phone: "",
+    role: "",
+    serviceIds: [],
+    startTime: "09:00",
+    workdays: ["Seg", "Ter", "Qua", "Qui", "Sex"],
+  };
+}
+
+function TeamPage() {
+  const {
+    professionals,
+    services,
+    blocks,
+    appointments,
+    createOrUpdateProfessional,
+    deleteProfessional,
+    deleteBlock,
+    saveBlock,
+  } = useSalon();
   const [open, setOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
-  const [blockPro, setBlockPro] = useState(professionals[0]?.id ?? "");
+  const [blockProfessionalId, setBlockProfessionalId] = useState(professionals[0]?.id ?? "");
   const [blockDate, setBlockDate] = useState(today());
   const [blockFrom, setBlockFrom] = useState("12:00");
   const [blockTo, setBlockTo] = useState("13:00");
   const [blockReason, setBlockReason] = useState("");
-  const [form, setForm] = useState<Professional>({
-    id: "", name: "", role: "", phone: "", commission: 40, active: true,
-    serviceIds: [], workdays: ["Seg", "Ter", "Qua", "Qui", "Sex"], startTime: "09:00", endTime: "19:00",
-  });
+  const [form, setForm] = useState<Professional>(createEmptyProfessional());
 
-  const save = () => {
+  const revenueOf = (professionalId: string) =>
+    appointments
+      .filter((appointment) => appointment.professionalId === professionalId && appointment.status === "concluido")
+      .reduce((sum, appointment) => sum + appointment.price, 0);
+
+  async function handleSaveProfessional() {
     if (!form.name.trim()) {
-      toast.error("Informe o nome.");
+      toast.error("Informe o nome do profissional.");
       return;
     }
-    if (form.id) {
-      update("professionals", professionals.map((p) => (p.id === form.id ? form : p)));
-      toast.success("Profissional atualizado");
-    } else {
-      update("professionals", [...professionals, { ...form, id: uid("pro") }]);
-      toast.success("Profissional cadastrado");
-    }
-    setOpen(false);
-  };
 
-  const revenueOf = (id: string) =>
-    appointments.filter((a) => a.professionalId === id && a.status === "concluido").reduce((s, a) => s + a.price, 0);
+    try {
+      await createOrUpdateProfessional(form);
+      toast.success(form.id ? "Profissional atualizado" : "Profissional cadastrado");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o profissional.");
+    }
+  }
+
+  async function handleSaveBlock() {
+    if (!blockProfessionalId) {
+      toast.error("Selecione um profissional para bloquear a agenda.");
+      return;
+    }
+
+    const payload: Block = {
+      date: blockDate,
+      from: blockFrom,
+      id: "",
+      professionalId: blockProfessionalId,
+      reason: blockReason || "Bloqueio",
+      to: blockTo,
+    };
+
+    try {
+      await saveBlock(payload);
+      toast.success("Bloqueio criado");
+      setBlockOpen(false);
+      setBlockReason("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível criar o bloqueio.");
+    }
+  }
 
   return (
     <>
@@ -57,11 +106,24 @@ function Equipe() {
         subtitle="Profissionais, horários, comissões e bloqueios"
         actions={
           <>
-            <Button variant="outline" className="rounded-full" onClick={() => setBlockOpen(true)}>Novo bloqueio</Button>
+            <Button
+              variant="outline"
+              className="rounded-full"
+              onClick={() => {
+                if (!professionals.length) {
+                  toast.info("Cadastre um profissional antes de criar bloqueios.");
+                  return;
+                }
+                setBlockProfessionalId(professionals[0]?.id ?? "");
+                setBlockOpen(true);
+              }}
+            >
+              Novo bloqueio
+            </Button>
             <Button
               className="rounded-full"
               onClick={() => {
-                setForm({ id: "", name: "", role: "", phone: "", commission: 40, active: true, serviceIds: [], workdays: ["Seg", "Ter", "Qua", "Qui", "Sex"], startTime: "09:00", endTime: "19:00" });
+                setForm(createEmptyProfessional());
                 setOpen(true);
               }}
             >
@@ -72,48 +134,82 @@ function Equipe() {
       />
 
       <section className="mb-8 grid gap-6 sm:grid-cols-3">
-        <StatCard label="Profissionais ativos" value={String(professionals.filter((p) => p.active).length)} />
-        <StatCard label="Comissão média" value={`${Math.round(professionals.reduce((s, p) => s + p.commission, 0) / (professionals.length || 1))}%`} tone="primary" />
+        <StatCard label="Profissionais ativos" value={String(professionals.filter((professional) => professional.active).length)} />
+        <StatCard
+          label="Comissão média"
+          value={`${Math.round(professionals.reduce((sum, professional) => sum + professional.commission, 0) / (professionals.length || 1))}%`}
+          tone="primary"
+        />
         <StatCard label="Bloqueios ativos" value={String(blocks.length)} tone="warning" />
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {professionals.map((p) => (
-          <div key={p.id} className="panel p-5">
+        {professionals.map((professional) => (
+          <div key={professional.id} className="panel p-5">
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <h3 className="font-medium">{p.name}</h3>
-                <p className="text-xs text-muted-foreground">{p.role} · {p.phone}</p>
+                <h3 className="font-medium">{professional.name}</h3>
+                <p className="text-xs text-muted-foreground">{professional.role} · {professional.phone}</p>
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <Switch
-                  checked={p.active}
-                  onCheckedChange={(v) => update("professionals", professionals.map((x) => (x.id === p.id ? { ...x, active: v } : x)))}
+                  checked={professional.active}
+                  onCheckedChange={async (checked) => {
+                    try {
+                      await createOrUpdateProfessional({ ...professional, active: checked });
+                      toast.success(checked ? "Profissional ativado" : "Profissional inativado");
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar o profissional.");
+                    }
+                  }}
                 />
-                {p.active ? "Ativo" : "Inativo"}
+                {professional.active ? "Ativo" : "Inativo"}
               </div>
             </div>
             <div className="mb-4 grid grid-cols-3 gap-3 text-xs">
-              <div><p className="text-muted-foreground">Comissão</p><p className="font-medium">{p.commission}%</p></div>
-              <div><p className="text-muted-foreground">Jornada</p><p className="font-medium">{p.startTime}–{p.endTime}</p></div>
-              <div><p className="text-muted-foreground">Faturou</p><p className="font-medium">{brl(revenueOf(p.id))}</p></div>
+              <div><p className="text-muted-foreground">Comissão</p><p className="font-medium">{professional.commission}%</p></div>
+              <div><p className="text-muted-foreground">Jornada</p><p className="font-medium">{professional.startTime}-{professional.endTime}</p></div>
+              <div><p className="text-muted-foreground">Faturou</p><p className="font-medium">{brl(revenueOf(professional.id))}</p></div>
             </div>
             <p className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Dias</p>
-            <p className="mb-3 text-xs">{p.workdays.join(" · ")}</p>
+            <p className="mb-3 text-xs">{professional.workdays.join(" · ")}</p>
             <p className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Serviços</p>
             <p className="mb-4 text-xs">
-              {p.serviceIds.map((id) => services.find((s) => s.id === id)?.name).filter(Boolean).join(", ") || "Nenhum"}
+              {professional.serviceIds.map((serviceId) => services.find((service) => service.id === serviceId)?.name).filter(Boolean).join(", ") || "Nenhum"}
             </p>
             <div className="flex gap-2 border-t border-border pt-4">
-              <Button size="sm" variant="outline" onClick={() => { setForm(p); setOpen(true); }}>Editar</Button>
-              <Button size="sm" variant="ghost" onClick={() => {
-                update("professionals", professionals.map((x) => (x.id === p.id ? { ...x, active: false, role: `${x.role} (desligado)` } : x)));
-                toast.success("Profissional desligado");
-              }}>Desligar</Button>
-              <Button size="sm" variant="ghost" className="text-destructive" onClick={() => {
-                update("professionals", professionals.filter((x) => x.id !== p.id));
-                toast.success("Profissional excluído");
-              }}>Excluir</Button>
+              <Button size="sm" variant="outline" onClick={() => { setForm(professional); setOpen(true); }}>
+                Editar
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  try {
+                    await createOrUpdateProfessional({ ...professional, active: false });
+                    toast.success("Profissional inativado");
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Não foi possível desligar o profissional.");
+                  }
+                }}
+              >
+                Desligar
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive"
+                onClick={async () => {
+                  try {
+                    await deleteProfessional(professional.id);
+                    toast.success("Profissional excluído");
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Não foi possível excluir o profissional.");
+                  }
+                }}
+              >
+                Excluir
+              </Button>
             </div>
           </div>
         ))}
@@ -121,15 +217,26 @@ function Equipe() {
 
       <h2 className="mb-4 mt-10 text-lg font-medium">Bloqueios de agenda</h2>
       <div className="space-y-3">
-        {blocks.map((b) => (
-          <div key={b.id} className="panel flex items-center justify-between p-4 text-sm">
+        {blocks.map((block) => (
+          <div key={block.id} className="panel flex items-center justify-between p-4 text-sm">
             <span>
-              {professionals.find((p) => p.id === b.professionalId)?.name} · {formatDateBR(b.date)} · {b.from}–{b.to} — {b.reason}
+              {professionals.find((professional) => professional.id === block.professionalId)?.name} · {formatDateBR(block.date)} · {block.from}-{block.to} - {block.reason}
             </span>
-            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => {
-              update("blocks", blocks.filter((x) => x.id !== b.id));
-              toast.success("Bloqueio removido");
-            }}>Remover</Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive"
+              onClick={async () => {
+                try {
+                  await deleteBlock(block.id);
+                  toast.success("Bloqueio removido");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Não foi possível remover o bloqueio.");
+                }
+              }}
+            >
+              Remover
+            </Button>
           </div>
         ))}
         {blocks.length === 0 && <div className="panel p-8 text-center text-sm text-muted-foreground">Nenhum bloqueio ativo.</div>}
@@ -138,34 +245,56 @@ function Equipe() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">{form.id ? "Editar profissional" : "Cadastrar profissional"}</DialogTitle>
+            <DialogTitle className="font-display text-2xl">
+              {form.id ? "Editar profissional" : "Cadastrar profissional"}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-              <div className="grid gap-2"><Label>Função</Label><Input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></div>
+              <div className="grid gap-2">
+                <Label>Nome</Label>
+                <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Função</Label>
+                <Input value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="grid gap-2"><Label>Telefone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-              <div className="grid gap-2"><Label>Início</Label><Input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
-              <div className="grid gap-2"><Label>Fim</Label><Input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>
+              <div className="grid gap-2">
+                <Label>Telefone</Label>
+                <Input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Início</Label>
+                <Input type="time" value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Fim</Label>
+                <Input type="time" value={form.endTime} onChange={(event) => setForm({ ...form, endTime: event.target.value })} />
+              </div>
             </div>
             <div className="grid gap-2">
               <Label>Comissão (%)</Label>
-              <Input type="number" value={form.commission} onChange={(e) => setForm({ ...form, commission: Number(e.target.value) })} />
+              <Input type="number" value={form.commission} onChange={(event) => setForm({ ...form, commission: Number(event.target.value) })} />
             </div>
             <div className="grid gap-2">
               <Label>Dias de trabalho</Label>
               <div className="flex flex-wrap gap-3">
-                {days.map((d) => (
-                  <label key={d} className="flex items-center gap-1.5 text-xs">
+                {weekDays.map((day) => (
+                  <label key={day} className="flex items-center gap-1.5 text-xs">
                     <Checkbox
-                      checked={form.workdays.includes(d)}
-                      onCheckedChange={(v) =>
-                        setForm({ ...form, workdays: v ? [...form.workdays, d] : form.workdays.filter((x) => x !== d) })
+                      checked={form.workdays.includes(day)}
+                      onCheckedChange={(checked) =>
+                        setForm({
+                          ...form,
+                          workdays: checked
+                            ? Array.from(new Set([...form.workdays, day]))
+                            : form.workdays.filter((value) => value !== day),
+                        })
                       }
                     />
-                    {d}
+                    {day}
                   </label>
                 ))}
               </div>
@@ -173,15 +302,20 @@ function Equipe() {
             <div className="grid gap-2">
               <Label>Serviços atribuídos</Label>
               <div className="grid grid-cols-2 gap-2">
-                {services.map((s) => (
-                  <label key={s.id} className="flex items-center gap-1.5 text-xs">
+                {services.map((service) => (
+                  <label key={service.id} className="flex items-center gap-1.5 text-xs">
                     <Checkbox
-                      checked={form.serviceIds.includes(s.id)}
-                      onCheckedChange={(v) =>
-                        setForm({ ...form, serviceIds: v ? [...form.serviceIds, s.id] : form.serviceIds.filter((x) => x !== s.id) })
+                      checked={form.serviceIds.includes(service.id)}
+                      onCheckedChange={(checked) =>
+                        setForm({
+                          ...form,
+                          serviceIds: checked
+                            ? Array.from(new Set([...form.serviceIds, service.id]))
+                            : form.serviceIds.filter((value) => value !== service.id),
+                        })
                       }
                     />
-                    {s.name}
+                    {service.name}
                   </label>
                 ))}
               </div>
@@ -189,33 +323,39 @@ function Equipe() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button onClick={save}>Salvar</Button>
+            <Button onClick={() => void handleSaveProfessional()}>Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={blockOpen} onOpenChange={setBlockOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="font-display text-2xl">Novo bloqueio</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">Novo bloqueio</DialogTitle>
+          </DialogHeader>
           <div className="grid gap-3">
             <Label>Profissional</Label>
-            <select className="h-10 rounded-md border border-input bg-transparent px-3 text-sm" value={blockPro} onChange={(e) => setBlockPro(e.target.value)}>
-              {professionals.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <select
+              className="h-10 rounded-md border border-input bg-transparent px-3 text-sm"
+              value={blockProfessionalId}
+              onChange={(event) => setBlockProfessionalId(event.target.value)}
+            >
+              {professionals.map((professional) => (
+                <option key={professional.id} value={professional.id}>
+                  {professional.name}
+                </option>
+              ))}
             </select>
             <div className="grid grid-cols-3 gap-2">
-              <Input type="date" value={blockDate} onChange={(e) => setBlockDate(e.target.value)} />
-              <Input type="time" value={blockFrom} onChange={(e) => setBlockFrom(e.target.value)} />
-              <Input type="time" value={blockTo} onChange={(e) => setBlockTo(e.target.value)} />
+              <Input type="date" value={blockDate} onChange={(event) => setBlockDate(event.target.value)} />
+              <Input type="time" value={blockFrom} onChange={(event) => setBlockFrom(event.target.value)} />
+              <Input type="time" value={blockTo} onChange={(event) => setBlockTo(event.target.value)} />
             </div>
-            <Input placeholder="Motivo" value={blockReason} onChange={(e) => setBlockReason(e.target.value)} />
+            <Input placeholder="Motivo" value={blockReason} onChange={(event) => setBlockReason(event.target.value)} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBlockOpen(false)}>Cancelar</Button>
-            <Button onClick={() => {
-              update("blocks", [...blocks, { id: uid("blk"), professionalId: blockPro, date: blockDate, from: blockFrom, to: blockTo, reason: blockReason || "Bloqueio" }]);
-              toast.success("Bloqueio criado");
-              setBlockOpen(false);
-            }}>Criar</Button>
+            <Button onClick={() => void handleSaveBlock()}>Criar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

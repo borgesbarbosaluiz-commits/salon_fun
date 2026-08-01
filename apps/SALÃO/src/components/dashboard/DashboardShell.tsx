@@ -1,23 +1,49 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Menu, Plus, Search, Bell } from "lucide-react";
+import { Bell, LogOut, Menu, Plus, RefreshCcw, Search } from "lucide-react";
 import { useState } from "react";
-import { navGroups } from "./nav-config";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
 import { useSalon } from "@/lib/salon-store";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+
 import { NewAppointmentDialog } from "./NewAppointmentDialog";
+import { navGroups } from "./nav-config";
 
 export function DashboardShell() {
-  const { settings } = useSalon();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { settings, error, refresh, signOut } = useSalon();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [open, setOpen] = useState(false);
-  const [newApt, setNewApt] = useState(false);
+  const [newAppointmentOpen, setNewAppointmentOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const dateLabel = new Date().toLocaleDateString("pt-BR", {
-    weekday: "long",
     day: "numeric",
     month: "long",
+    weekday: "long",
   });
+
+  async function handleRefresh() {
+    try {
+      setRefreshing(true);
+      await refresh();
+      toast.success("Painel sincronizado com a base real");
+    } catch (nextError) {
+      toast.error(nextError instanceof Error ? nextError.message : "Não foi possível atualizar o painel.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      setSigningOut(true);
+      await signOut();
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -40,8 +66,7 @@ export function DashboardShell() {
               {group.title}
             </p>
             {group.items.map((item) => {
-              const active =
-                item.to === "/dashboard" ? pathname === "/dashboard" : pathname === item.to;
+              const active = item.to === "/dashboard" ? pathname === "/dashboard" : pathname === item.to;
               return (
                 <Link
                   key={item.to}
@@ -63,7 +88,7 @@ export function DashboardShell() {
 
         <div className="mt-auto rounded-xl bg-foreground p-4 text-background">
           <p className="text-xs opacity-60">Plano Profissional</p>
-          <p className="mb-3 font-medium">Renova em 12 dias</p>
+          <p className="mb-3 font-medium">Base conectada ao salão real</p>
           <Link
             to="/dashboard/billing"
             className="block w-full rounded-lg bg-primary py-2 text-center text-xs font-bold uppercase tracking-wider text-primary-foreground"
@@ -106,18 +131,31 @@ export function DashboardShell() {
             >
               <Bell className="size-4" />
             </Link>
-            <Button className="rounded-full" onClick={() => setNewApt(true)}>
+            <Button variant="outline" className="rounded-full" onClick={() => void handleRefresh()} disabled={refreshing}>
+              <RefreshCcw className={cn("size-4", refreshing && "animate-spin")} />
+              Atualizar
+            </Button>
+            <Button variant="outline" className="rounded-full" onClick={() => void handleSignOut()} disabled={signingOut}>
+              <LogOut className="size-4" />
+              Sair
+            </Button>
+            <Button className="rounded-full" onClick={() => setNewAppointmentOpen(true)}>
               <Plus className="size-4" /> Novo agendamento
             </Button>
           </div>
         </header>
 
         <main className="flex-1 p-6 lg:p-10">
+          {error && (
+            <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              {error}
+            </div>
+          )}
           <Outlet />
         </main>
       </div>
 
-      <NewAppointmentDialog open={newApt} onOpenChange={setNewApt} />
+      <NewAppointmentDialog open={newAppointmentOpen} onOpenChange={setNewAppointmentOpen} />
     </div>
   );
 }

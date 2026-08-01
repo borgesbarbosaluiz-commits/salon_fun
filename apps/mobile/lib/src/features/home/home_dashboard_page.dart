@@ -889,7 +889,11 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
     final servicesCount =
         landing?.stats.servicesCount ?? featuredServices.length;
     final visibleHomeModules = preview?.visibleHomeModules ?? const <String>[];
+    final highlightBlocks =
+        preview?.highlightBlocks ?? const <SalonHighlightBlock>[];
     final homeEmphasis = preview?.homeEmphasis?.trim().toLowerCase();
+    final showPrices = preview?.showPrices ?? true;
+    final showTeam = preview?.showTeam ?? true;
     final logoUrl = _normalizedImageUrl(preview?.logoUrl);
     final customerProfileImageUrl = _normalizedImageUrl(
       session.customer.profileImageUrl,
@@ -1270,6 +1274,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
                       child: _SalonReviewShowcaseCard(
                         review: recentReviews[index],
                         accent: accent,
+                        showTeamDetails: showTeam,
                       ),
                     ),
                   ),
@@ -1292,6 +1297,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
                   service: highlightedService,
                   accent: accent,
                   ctaLabel: preview?.primaryCtaLabel,
+                  showPrice: showPrices,
                   onTap: () => widget.onNavigate(1),
                 ),
               ],
@@ -1407,6 +1413,13 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                if (highlightBlocks.isNotEmpty) ...[
+                  _HomeHighlightBlocksSection(
+                    blocks: highlightBlocks,
+                    accent: accent,
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 if (!_loading && birthdayExperience != null) ...[
                   _BirthdayExperienceCard(
                     experience: birthdayExperience,
@@ -1505,11 +1518,100 @@ class _HomeSalonIdentityBanner extends StatelessWidget {
   }
 }
 
+class _HomeHighlightBlocksSection extends StatelessWidget {
+  const _HomeHighlightBlocksSection({
+    required this.blocks,
+    required this.accent,
+  });
+
+  final List<SalonHighlightBlock> blocks;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionTitle(
+          title: 'Destaques do salao',
+          subtitle:
+              'Os blocos definidos no painel SALAO aparecem aqui como atalhos visuais da experiencia.',
+        ),
+        const SizedBox(height: 14),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 360;
+            final cardWidth = compact
+                ? constraints.maxWidth
+                : (constraints.maxWidth - 12) / 2;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final block in blocks.take(4))
+                  SizedBox(
+                    width: cardWidth,
+                    child: _HomeHighlightBlockCard(
+                      block: block,
+                      accent: accent,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeHighlightBlockCard extends StatelessWidget {
+  const _HomeHighlightBlockCard({required this.block, required this.accent});
+
+  final SalonHighlightBlock block;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final emoji = block.emoji.trim().isEmpty ? '✨' : block.emoji.trim();
+    return SalonPanel(
+      padding: const EdgeInsets.all(18),
+      accent: accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(emoji, style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 12),
+          Text(
+            block.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            block.subtitle,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SalonReviewShowcaseCard extends StatelessWidget {
-  const _SalonReviewShowcaseCard({required this.review, required this.accent});
+  const _SalonReviewShowcaseCard({
+    required this.review,
+    required this.accent,
+    required this.showTeamDetails,
+  });
 
   final SalonReviewHighlight review;
   final Color accent;
+  final bool showTeamDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -1517,12 +1619,12 @@ class _SalonReviewShowcaseCard extends StatelessWidget {
     final normalizedComment = review.comment?.trim();
     final supportLabel = [
       if (review.serviceName?.trim().isNotEmpty == true) review.serviceName!,
-      if (review.staffName?.trim().isNotEmpty == true)
+      if (showTeamDetails && review.staffName?.trim().isNotEmpty == true)
         'com ${review.staffName!}',
     ].join(' - ');
     final showProfessionalSignature =
         supportLabel.isNotEmpty ||
-        review.staffImageUrl?.trim().isNotEmpty == true;
+        (showTeamDetails && review.staffImageUrl?.trim().isNotEmpty == true);
 
     return SalonPanel(
       accent: accent,
@@ -1552,7 +1654,7 @@ class _SalonReviewShowcaseCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _SalonReviewProfessionalAvatar(
-                  imageUrl: review.staffImageUrl,
+                  imageUrl: showTeamDetails ? review.staffImageUrl : null,
                   accent: accent,
                 ),
                 const SizedBox(width: 10),
@@ -3038,12 +3140,14 @@ class _ServiceFeatureCard extends StatelessWidget {
     required this.service,
     required this.accent,
     required this.ctaLabel,
+    required this.showPrice,
     required this.onTap,
   });
 
   final SalonServiceHighlight service;
   final Color accent;
   final String? ctaLabel;
+  final bool showPrice;
   final VoidCallback onTap;
 
   @override
@@ -3127,11 +3231,12 @@ class _ServiceFeatureCard extends StatelessWidget {
         runSpacing: 8,
         children: [
           Pill(label: '${service.duration} min', icon: Icons.schedule_rounded),
-          Pill(
-            label: formatCurrency(service.price),
-            backgroundColor: accent.withValues(alpha: 0.12),
-            foregroundColor: accent,
-          ),
+          if (showPrice)
+            Pill(
+              label: formatCurrency(service.price),
+              backgroundColor: accent.withValues(alpha: 0.12),
+              foregroundColor: accent,
+            ),
         ],
       ),
       const SizedBox(height: 14),

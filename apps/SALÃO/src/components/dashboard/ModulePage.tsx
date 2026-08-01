@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { toast } from "sonner";
+
 import { PageHeader, StatCard } from "@/components/dashboard/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { brl, uid, useSalon } from "@/lib/salon-store";
+import { brl, useSalon } from "@/lib/salon-store";
 
 export default function ModulePage({
   moduleKey,
@@ -17,24 +18,51 @@ export default function ModulePage({
 }) {
   const salon = useSalon();
   const {
-    transactions, professionals, appointments, clients, products, orders,
-    posts, promotions, comandas, settings, update,
+    appointments,
+    clients,
+    comandas,
+    openComanda,
+    orders,
+    posts,
+    products,
+    professionals,
+    promotions,
+    publishPost,
+    settings,
+    transactions,
+    updateComandaWithItem,
+    updateComandaWithPayment,
+    updateComandaWithStatus,
+    updateOrderStatus,
+    incrementProductStock,
+    deletePost,
+    createOrUpdatePromotion,
+    deletePromotion,
   } = salon;
   const [text, setText] = useState("");
 
-  const revenue = transactions.filter((t) => t.type === "entrada").reduce((s, t) => s + t.amount, 0);
+  const revenue = transactions
+    .filter((transaction) => transaction.type === "entrada")
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+
+  async function handleCopyPhone(phone: string, name: string) {
+    if (!phone.trim()) {
+      toast.error("Este cliente não possui telefone cadastrado.");
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      toast.error("O navegador não liberou a área de transferência.");
+      return;
+    }
+
+    await navigator.clipboard.writeText(phone);
+    toast.success(`Contato de ${name} copiado`);
+  }
 
   return (
     <>
-      <PageHeader
-        title={title}
-        subtitle={subtitle}
-        actions={
-          <Button className="rounded-full" onClick={() => toast.success(`${title}: ação registrada`)}>
-            Ação principal
-          </Button>
-        }
-      />
+      <PageHeader title={title} subtitle={subtitle} />
 
       <section className="mb-8 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Receita acumulada" value={brl(revenue)} tone="primary" />
@@ -45,11 +73,15 @@ export default function ModulePage({
 
       {moduleKey.includes("comissoes") && (
         <div className="space-y-3">
-          {professionals.map((p) => (
-            <div key={p.id} className="panel flex items-center justify-between p-4 text-sm">
-              <span>{p.name} · {p.commission}%</span>
+          {professionals.map((professional) => (
+            <div key={professional.id} className="panel flex items-center justify-between p-4 text-sm">
+              <span>{professional.name} · {professional.commission}%</span>
               <span className="font-medium">
-                {brl(appointments.filter((a) => a.professionalId === p.id && a.status === "concluido").reduce((s, a) => s + a.price, 0) * (p.commission / 100))}
+                {brl(
+                  appointments
+                    .filter((appointment) => appointment.professionalId === professional.id && appointment.status === "concluido")
+                    .reduce((sum, appointment) => sum + appointment.price, 0) * (professional.commission / 100),
+                )}
               </span>
             </div>
           ))}
@@ -58,10 +90,10 @@ export default function ModulePage({
 
       {moduleKey.includes("pagamentos") && (
         <div className="space-y-2">
-          {transactions.filter((t) => t.type === "entrada").map((t) => (
-            <div key={t.id} className="panel flex items-center justify-between p-4 text-sm">
-              <span>{t.description} · {t.method}</span>
-              <span className="font-medium text-success">{brl(t.amount)}</span>
+          {transactions.filter((transaction) => transaction.type === "entrada").map((transaction) => (
+            <div key={transaction.id} className="panel flex items-center justify-between p-4 text-sm">
+              <span>{transaction.description} · {transaction.method}</span>
+              <span className="font-medium text-success">{brl(transaction.amount)}</span>
             </div>
           ))}
         </div>
@@ -69,34 +101,75 @@ export default function ModulePage({
 
       {moduleKey.includes("comandas") && (
         <div className="space-y-3">
-          {comandas.map((c) => (
-            <div key={c.id} className="panel p-4 text-sm">
+          {comandas.map((comanda) => (
+            <div key={comanda.id} className="panel p-4 text-sm">
               <div className="flex items-center justify-between">
-                <p className="font-medium">{c.clientName} · {c.status}</p>
+                <p className="font-medium">{comanda.clientName} · {comanda.status}</p>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => {
-                    update("comandas", comandas.map((x) => x.id === c.id ? { ...x, items: [...x.items, { id: uid("it"), name: "Item adicional", price: 60 }] } : x));
-                    toast.success("Item adicionado");
-                  }}>Add item</Button>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    update("comandas", comandas.map((x) => x.id === c.id ? { ...x, payments: [...x.payments, { id: uid("pay"), method: "pix", amount: 60 }] } : x));
-                    toast.success("Pagamento adicionado");
-                  }}>Add pagamento</Button>
-                  <Button size="sm" variant="ghost" onClick={() => {
-                    update("comandas", comandas.map((x) => x.id === c.id ? { ...x, status: "fechada" as const } : x));
-                    toast.success("Comanda fechada");
-                  }}>Fechar</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await updateComandaWithItem(comanda.id);
+                        toast.success("Item adicionado");
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Não foi possível adicionar o item.");
+                      }
+                    }}
+                  >
+                    Add item
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await updateComandaWithPayment(comanda.id);
+                        toast.success("Pagamento adicionado");
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Não foi possível registrar o pagamento.");
+                      }
+                    }}
+                  >
+                    Add pagamento
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await updateComandaWithStatus(comanda.id);
+                        toast.success("Comanda fechada");
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Não foi possível fechar a comanda.");
+                      }
+                    }}
+                  >
+                    Fechar
+                  </Button>
                 </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                {c.items.length} itens · total {brl(c.items.reduce((s, i) => s + i.price, 0))}
+                {comanda.items.length} itens · total {brl(comanda.items.reduce((sum, item) => sum + item.price, 0))}
               </p>
             </div>
           ))}
-          <Button variant="outline" className="rounded-full" onClick={() => {
-            update("comandas", [...comandas, { id: uid("cmd"), clientName: text || "Cliente avulso", opened: new Date().toISOString().slice(11, 16), items: [], payments: [], status: "aberta" }]);
-            toast.success("Comanda aberta");
-          }}>Abrir comanda</Button>
+          <Button
+            variant="outline"
+            className="rounded-full"
+            onClick={async () => {
+              try {
+                await openComanda(text || "Cliente avulso");
+                setText("");
+                toast.success("Comanda aberta");
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Não foi possível abrir a comanda.");
+              }
+            }}
+          >
+            Abrir comanda
+          </Button>
         </div>
       )}
 
@@ -104,29 +177,48 @@ export default function ModulePage({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
             <h2 className="text-lg font-medium">Estoque</h2>
-            {products.map((p) => (
-              <div key={p.id} className="panel flex items-center justify-between p-4 text-sm">
-                <span>{p.name} · {p.brand}</span>
+            {products.map((product) => (
+              <div key={product.id} className="panel flex items-center justify-between p-4 text-sm">
+                <span>{product.name} · {product.brand}</span>
                 <div className="flex items-center gap-3">
-                  <span className={p.stock <= p.minStock ? "text-destructive" : ""}>{p.stock} un</span>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    update("products", products.map((x) => x.id === p.id ? { ...x, stock: x.stock + 1 } : x));
-                    toast.success("Movimentação registrada");
-                  }}>+1</Button>
+                  <span className={product.stock <= product.minStock ? "text-destructive" : ""}>{product.stock} un</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await incrementProductStock(product.id);
+                        toast.success("Movimentação registrada");
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Não foi possível movimentar o estoque.");
+                      }
+                    }}
+                  >
+                    +1
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
           <div className="space-y-3">
             <h2 className="text-lg font-medium">Pedidos</h2>
-            {orders.map((o) => (
-              <div key={o.id} className="panel flex items-center justify-between p-4 text-sm">
-                <span>{o.clientName} · {o.productName}</span>
-                <Button size="sm" variant="outline" onClick={() => {
-                  const next = { novo: "separando", separando: "pronto", pronto: "entregue", entregue: "entregue" } as const;
-                  update("orders", orders.map((x) => x.id === o.id ? { ...x, status: next[x.status] } : x));
-                  toast.success("Status atualizado");
-                }}>{o.status}</Button>
+            {orders.map((order) => (
+              <div key={order.id} className="panel flex items-center justify-between p-4 text-sm">
+                <span>{order.clientName} · {order.productName}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await updateOrderStatus(order);
+                      toast.success("Status atualizado");
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar o pedido.");
+                    }
+                  }}
+                >
+                  {order.status}
+                </Button>
               </div>
             ))}
           </div>
@@ -136,25 +228,48 @@ export default function ModulePage({
       {moduleKey.includes("feed") && (
         <div className="space-y-4">
           <div className="panel flex gap-2 p-4">
-            <Input placeholder="Escreva um post do salão" value={text} onChange={(e) => setText(e.target.value)} />
-            <Button onClick={() => {
-              if (!text.trim()) { toast.error("Escreva algo."); return; }
-              update("posts", [{ id: uid("post"), format: "standard", title: text.slice(0, 40), body: text, createdAt: new Date().toISOString().slice(0, 10), likes: 0, comments: [] }, ...posts]);
-              setText("");
-              toast.success("Post publicado");
-            }}>Publicar</Button>
+            <Input placeholder="Escreva um post do salão" value={text} onChange={(event) => setText(event.target.value)} />
+            <Button
+              onClick={async () => {
+                if (!text.trim()) {
+                  toast.error("Escreva algo.");
+                  return;
+                }
+
+                try {
+                  await publishPost(text);
+                  setText("");
+                  toast.success("Post publicado");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Não foi possível publicar o post.");
+                }
+              }}
+            >
+              Publicar
+            </Button>
           </div>
-          {posts.map((p) => (
-            <div key={p.id} className="panel p-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">{p.format}</p>
-              <p className="font-medium">{p.title}</p>
-              <p className="text-sm text-muted-foreground">{p.body}</p>
+          {posts.map((post) => (
+            <div key={post.id} className="panel p-4">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">{post.format}</p>
+              <p className="font-medium">{post.title}</p>
+              <p className="text-sm text-muted-foreground">{post.body}</p>
               <div className="mt-3 flex items-center justify-between text-xs">
-                <span>{p.likes} curtidas · {p.comments.length} comentários</span>
-                <Button size="sm" variant="ghost" className="text-destructive" onClick={() => {
-                  update("posts", posts.filter((x) => x.id !== p.id));
-                  toast.success("Post excluído");
-                }}>Excluir</Button>
+                <span>{post.likes} curtidas · {post.comments.length} comentários</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={async () => {
+                    try {
+                      await deletePost(post.id);
+                      toast.success("Post excluído");
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível excluir o post.");
+                    }
+                  }}
+                >
+                  Excluir
+                </Button>
               </div>
             </div>
           ))}
@@ -163,53 +278,100 @@ export default function ModulePage({
 
       {moduleKey.includes("promotions") && (
         <div className="space-y-3">
-          {promotions.map((p) => (
-            <div key={p.id} className="panel flex items-center justify-between p-4 text-sm">
+          {promotions.map((promotion) => (
+            <div key={promotion.id} className="panel flex items-center justify-between p-4 text-sm">
               <div>
-                <p className="font-medium">{p.name} · {p.discount}%</p>
-                <p className="text-xs text-muted-foreground">{p.channel} · {p.redemptions} resgates</p>
+                <p className="font-medium">{promotion.name} · {promotion.discount}%</p>
+                <p className="text-xs text-muted-foreground">{promotion.channel} · {promotion.redemptions} resgates</p>
               </div>
               <div className="flex items-center gap-3">
-                <Switch checked={p.active} onCheckedChange={(v) => update("promotions", promotions.map((x) => x.id === p.id ? { ...x, active: v } : x))} />
-                <Button size="sm" variant="outline" onClick={() => toast.success(`Campanha "${p.name}" enviada`)}>Enviar</Button>
-                <Button size="sm" variant="ghost" className="text-destructive" onClick={() => {
-                  update("promotions", promotions.filter((x) => x.id !== p.id));
-                  toast.success("Campanha excluída");
-                }}>Excluir</Button>
+                <Switch
+                  checked={promotion.active}
+                  onCheckedChange={async (checked) => {
+                    try {
+                      await createOrUpdatePromotion({ ...promotion, active: checked });
+                      toast.success(checked ? "Campanha ativada" : "Campanha pausada");
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar a campanha.");
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={async () => {
+                    try {
+                      await deletePromotion(promotion.id);
+                      toast.success("Campanha excluída");
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível excluir a campanha.");
+                    }
+                  }}
+                >
+                  Excluir
+                </Button>
               </div>
             </div>
           ))}
-          <Button variant="outline" className="rounded-full" onClick={() => {
-            update("promotions", [...promotions, { id: uid("promo"), name: "Nova oferta", discount: 15, channel: "WhatsApp", active: true, redemptions: 0 }]);
-            toast.success("Campanha criada");
-          }}>Criar campanha</Button>
+          <Button
+            variant="outline"
+            className="rounded-full"
+            onClick={async () => {
+              try {
+                await createOrUpdatePromotion({
+                  active: true,
+                  channel: "WhatsApp",
+                  discount: 15,
+                  id: "",
+                  name: "Nova oferta",
+                  redemptions: 0,
+                });
+                toast.success("Campanha criada");
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Não foi possível criar a campanha.");
+              }
+            }}
+          >
+            Criar campanha
+          </Button>
         </div>
       )}
 
       {moduleKey.includes("birthdays") && (
         <div className="space-y-3">
-          {clients.map((c) => (
-            <div key={c.id} className="panel flex items-center justify-between p-4 text-sm">
-              <span>{c.name} · {c.birthday}</span>
-              <Button size="sm" variant="outline" onClick={() => toast.success(`Parabéns enviado para ${c.name}`)}>Enviar mensagem</Button>
+          {clients.map((client) => (
+            <div key={client.id} className="panel flex items-center justify-between p-4 text-sm">
+              <span>{client.name} · {client.birthday}</span>
+              <Button size="sm" variant="outline" onClick={() => void handleCopyPhone(client.phone, client.name)}>
+                Copiar contato
+              </Button>
             </div>
           ))}
         </div>
       )}
 
-      {(moduleKey.includes("settings") || moduleKey.includes("billing") || moduleKey.includes("subscriptions") ||
-        moduleKey.includes("notifications") || moduleKey.includes("ai") || moduleKey.includes("benefits") ||
-        moduleKey.includes("operations")) && (
+      {((moduleKey.includes("settings") || moduleKey.includes("billing") || moduleKey.includes("subscriptions") ||
+        moduleKey.includes("notifications") || moduleKey.includes("ai") || moduleKey.includes("benefits")) &&
+        !moduleKey.includes("promotions")) && (
         <div className="panel space-y-4 p-6">
           <p className="text-sm text-muted-foreground">
-            Módulo operacional conectado aos dados do salão. Use as ações abaixo para simular o fluxo completo.
+            Este módulo já está lendo o panorama real do salão. As rotinas operacionais específicas continuam concentradas
+            nas áreas de agenda, clientes, equipe, estoque, feed, campanhas e financeiro.
           </p>
-          <div className="flex flex-wrap gap-2">
-            {["Salvar configuração", "Exportar dados", "Regenerar código", "Atualizar plano"].map((a) => (
-              <Button key={a} variant="outline" className="rounded-full" onClick={() => toast.success(`${a} concluído`)}>
-                {a}
-              </Button>
-            ))}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Clientes</p>
+              <p className="mt-2 text-2xl font-semibold">{clients.length}</p>
+            </div>
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Transações</p>
+              <p className="mt-2 text-2xl font-semibold">{transactions.length}</p>
+            </div>
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">Equipe</p>
+              <p className="mt-2 text-2xl font-semibold">{professionals.length}</p>
+            </div>
           </div>
         </div>
       )}

@@ -38,11 +38,35 @@ class AppTheme {
           _ => 'light',
         };
     final isDark = resolvedThemeMode == 'dark';
-    final resolvedBackground = isDark ? const Color(0xFF14181A) : background;
-    final resolvedPanel = isDark ? const Color(0xFF1A2023) : panel;
-    final resolvedInk = isDark ? const Color(0xFFF6F1EB) : ink;
-    final resolvedMutedInk = isDark ? const Color(0xFFC5BDB5) : mutedInk;
-    final resolvedLine = isDark ? const Color(0xFF3B3632) : line;
+    final explicitBackground = _parseHexColorOrNull(preview?.backgroundColor);
+    final explicitInk = _parseHexColorOrNull(preview?.textColor);
+    final fallbackBackground = isDark ? const Color(0xFF14181A) : background;
+    final fallbackPanel = isDark ? const Color(0xFF1A2023) : panel;
+    final fallbackInk = isDark ? const Color(0xFFF6F1EB) : ink;
+    final fallbackMutedInk = isDark ? const Color(0xFFC5BDB5) : mutedInk;
+    final fallbackLine = isDark ? const Color(0xFF3B3632) : line;
+    final resolvedBackground = explicitBackground ?? fallbackBackground;
+    final resolvedInk = explicitInk ?? fallbackInk;
+    final resolvedPanel = explicitBackground == null
+        ? fallbackPanel
+        : _mixColors(
+            resolvedBackground,
+            isDark ? Colors.white : Colors.white,
+            isDark ? 0.08 : 0.58,
+          );
+    final resolvedMutedInk = explicitInk == null && explicitBackground == null
+        ? fallbackMutedInk
+        : _mixColors(resolvedInk, resolvedBackground, isDark ? 0.34 : 0.52);
+    final resolvedLine = explicitInk == null && explicitBackground == null
+        ? fallbackLine
+        : _mixColors(resolvedBackground, resolvedInk, isDark ? 0.24 : 0.14);
+    final resolvedFontFamily = switch (preview?.fontStyle
+        ?.trim()
+        .toLowerCase()) {
+      'serif' => 'Georgia',
+      'mono' => 'Courier New',
+      _ => null,
+    };
     final explicitButtonStyle = preview?.buttonStyle?.trim().toLowerCase();
     final buttonStyle =
         (explicitButtonStyle?.isNotEmpty == true
@@ -86,6 +110,7 @@ class AppTheme {
     );
     final base = ThemeData(
       useMaterial3: true,
+      fontFamily: resolvedFontFamily,
       brightness: isDark ? Brightness.dark : Brightness.light,
       colorScheme: ColorScheme.fromSeed(
         seedColor: resolvedPrimary,
@@ -308,14 +333,18 @@ class AppTheme {
   }
 
   static Color _parseHexColor(String? value, {required Color fallback}) {
+    return _parseHexColorOrNull(value) ?? fallback;
+  }
+
+  static Color? _parseHexColorOrNull(String? value) {
     final normalized = value?.trim() ?? '';
     if (normalized.isEmpty) {
-      return fallback;
+      return null;
     }
 
     final hex = normalized.replaceFirst('#', '');
     if (hex.length != 6 && hex.length != 8) {
-      return fallback;
+      return null;
     }
 
     final buffer = StringBuffer();
@@ -324,9 +353,16 @@ class AppTheme {
     }
     buffer.write(hex);
 
-    return Color(
-      int.tryParse(buffer.toString(), radix: 16) ?? fallback.toARGB32(),
-    );
+    final parsed = int.tryParse(buffer.toString(), radix: 16);
+    if (parsed == null) {
+      return null;
+    }
+
+    return Color(parsed);
+  }
+
+  static Color _mixColors(Color from, Color to, double amount) {
+    return Color.lerp(from, to, amount.clamp(0, 1).toDouble()) ?? from;
   }
 }
 

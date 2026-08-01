@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/dashboard/primitives";
 import { Button } from "@/components/ui/button";
@@ -30,15 +30,38 @@ const fontMap = {
 } as const;
 
 function ClientApp() {
-  const { clientApp, services, professionals, update } = useSalon();
+  const { clientApp, saveClientApp, services, professionals } = useSalon();
   const [cfg, setCfg] = useState<ClientAppConfig>(clientApp);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setCfg(clientApp);
+  }, [clientApp]);
 
   const set = <K extends keyof ClientAppConfig>(key: K, value: ClientAppConfig[K]) =>
     setCfg((p) => ({ ...p, [key]: value }));
 
-  const save = () => {
-    update("clientApp", cfg);
-    toast.success("App do cliente atualizado");
+  const save = async () => {
+    setIsSaving(true);
+    try {
+      await saveClientApp(cfg);
+      toast.success("App do cliente atualizado com dados reais");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o app do cliente.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const copyInviteCode = async () => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cfg.inviteCode);
+      }
+      toast.success("Código do salão copiado");
+    } catch {
+      toast.error("Não foi possível copiar o código.");
+    }
   };
 
   const dark = cfg.theme === "escuro";
@@ -55,7 +78,9 @@ function ClientApp() {
             <Button variant="outline" className="rounded-full" onClick={() => { setCfg(clientApp); toast("Alterações descartadas"); }}>
               Descartar
             </Button>
-            <Button className="rounded-full" onClick={save}>Publicar alterações</Button>
+            <Button className="rounded-full" onClick={() => void save()} disabled={isSaving}>
+              {isSaving ? "Publicando..." : "Publicar alterações"}
+            </Button>
           </>
         }
       />
@@ -73,6 +98,16 @@ function ClientApp() {
 
           <TabsContent value="marca" className="space-y-5">
             <div className="panel grid gap-5 p-6">
+              <div className="panel divide-y divide-border rounded-3xl border border-border/70">
+                <Toggle label="Ativar dominio proprio" checked={Boolean(cfg.whiteLabelActive)} onChange={(v) => set("whiteLabelActive", v)} />
+                <Field label="Dominio publico do app">
+                  <Input
+                    value={cfg.customDomain ?? ""}
+                    placeholder="jc7desenvovimento.online"
+                    onChange={(e) => set("customDomain", e.target.value)}
+                  />
+                </Field>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nome do app"><Input value={cfg.appName} onChange={(e) => set("appName", e.target.value)} /></Field>
                 <Field label="Logo (texto)"><Input value={cfg.logoText} onChange={(e) => set("logoText", e.target.value)} /></Field>
@@ -179,8 +214,8 @@ function ClientApp() {
                 <Field label="Código de convite">
                   <div className="flex gap-2">
                     <Input value={cfg.inviteCode} readOnly />
-                    <Button variant="outline" onClick={() => { set("inviteCode", uid("MAISON").toUpperCase()); toast.success("Novo código gerado"); }}>
-                      Regenerar
+                    <Button variant="outline" onClick={() => void copyInviteCode()}>
+                      Copiar
                     </Button>
                   </div>
                 </Field>

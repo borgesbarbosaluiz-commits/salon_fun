@@ -58,27 +58,65 @@ void main() {
     expect(requestedHeaders?['Pragma'], 'no-cache');
   });
 
-  test('reuses the recent public salon landing snapshot before fetching again', () async {
-    var requestCount = 0;
-    final repository = PublicSalonRepository(
-      environment: _environment(),
-      client: MockClient((request) async {
-        requestCount += 1;
-        return http.Response(
-          jsonEncode(_landingPayload()),
-          200,
-          headers: const {'content-type': 'application/json'},
-        );
-      }),
-    );
+  test(
+    'reuses the recent public salon landing snapshot before fetching again',
+    () async {
+      var requestCount = 0;
+      final repository = PublicSalonRepository(
+        environment: _environment(),
+        client: MockClient((request) async {
+          requestCount += 1;
+          return http.Response(
+            jsonEncode(_landingPayload()),
+            200,
+            headers: const {'content-type': 'application/json'},
+          );
+        }),
+      );
 
-    final first = await repository.fetchLanding('SALAO7');
-    final second = await repository.fetchLanding('SALAO7');
+      final first = await repository.fetchLanding('SALAO7');
+      final second = await repository.fetchLanding('SALAO7');
 
-    expect(first?.preview.joinCode, 'SALAO7');
-    expect(second?.preview.joinCode, 'SALAO7');
-    expect(requestCount, 1);
-  });
+      expect(first?.preview.joinCode, 'SALAO7');
+      expect(second?.preview.joinCode, 'SALAO7');
+      expect(requestCount, 1);
+    },
+  );
+
+  test(
+    'merges the canonical salon payload into the public landing snapshot',
+    () async {
+      final repository = PublicSalonRepository(
+        environment: _environment(),
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode(_landingPayload()),
+            200,
+            headers: const {'content-type': 'application/json'},
+          );
+        }),
+        canonicalLoader: (joinCode) async => _canonicalLandingPayload(),
+      );
+
+      final landing = await repository.fetchLanding(
+        'SALAO7',
+        bypassCache: true,
+      );
+
+      expect(landing?.preview.appDisplayName, 'Studio Club');
+      expect(landing?.preview.backgroundColor, '#F4EFE8');
+      expect(landing?.preview.textColor, '#241A16');
+      expect(landing?.preview.fontStyle, 'serif');
+      expect(landing?.preview.cornerStyle, 'round');
+      expect(landing?.preview.highlightBlocks, hasLength(2));
+      expect(landing?.preview.highlightBlocks.first.title, 'Agenda rapida');
+      expect(landing?.preview.showPrices, isFalse);
+      expect(landing?.preview.showTeam, isFalse);
+      expect(landing?.preview.bookingDepositPercent, 35);
+      expect(landing?.recentReviews, hasLength(2));
+      expect(landing?.centralCampaigns, hasLength(1));
+    },
+  );
 
   test('normalizes remote theme options before building the app theme', () {
     const preview = SalonPreview(
@@ -88,6 +126,8 @@ void main() {
       appDisplayName: null,
       tagline: null,
       brandColor: '#123456',
+      backgroundColor: '#F4EFE8',
+      textColor: '#241A16',
       secondaryColor: '#654321',
       accentColor: '#ABCDEF',
       experienceModel: null,
@@ -128,6 +168,8 @@ void main() {
     expect(spec.buttonStyle, 'capsule');
     expect(spec.cardStyle, 'glass');
     expect(spec.bannerStyle, 'spotlight');
+    expect(spec.backgroundColor, const Color(0xFFF4EFE8));
+    expect(spec.inkColor, const Color(0xFF241A16));
   });
 }
 
@@ -219,6 +261,47 @@ Map<String, Object?> _landingPayload() {
         'ctaTarget': 'appointments',
       },
     ],
+    'stats': {},
+    'links': {},
+  };
+}
+
+Map<String, Object?> _canonicalLandingPayload() {
+  return {
+    'preview': {
+      'salonId': 'salon-1',
+      'joinCode': 'SALAO7',
+      'name': 'Studio',
+      'appDisplayName': 'Studio Club',
+      'brandColor': '#123456',
+      'backgroundColor': '#F4EFE8',
+      'textColor': '#241A16',
+      'fontStyle': 'serif',
+      'cornerStyle': 'round',
+      'themeMode': 'dark',
+      'showPrices': false,
+      'showTeam': false,
+      'highlightBlocks': [
+        {
+          'id': 'highlight-1',
+          'title': 'Agenda rapida',
+          'subtitle': 'Reserve em poucos toques',
+          'emoji': '⚡',
+        },
+        {
+          'id': 'highlight-2',
+          'title': 'Beneficios ativos',
+          'subtitle': 'Veja pontos e campanhas do salao',
+          'emoji': '🎁',
+        },
+      ],
+      'bookingDepositPercent': 35,
+    },
+    'featuredServices': [],
+    'activeOffers': [],
+    'recentPosts': [],
+    'recentReviews': [],
+    'centralCampaigns': [],
     'stats': {},
     'links': {},
   };

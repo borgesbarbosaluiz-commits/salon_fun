@@ -321,6 +321,38 @@ class SalonLandingData {
   }
 }
 
+class SalonHighlightBlock {
+  const SalonHighlightBlock({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.emoji,
+  });
+
+  factory SalonHighlightBlock.fromJson(Map<String, dynamic> map) {
+    return SalonHighlightBlock(
+      id: stringOrNull(map['id']) ?? 'highlight',
+      title: stringOrNull(map['title']) ?? 'Destaque',
+      subtitle: stringOrNull(map['subtitle']) ?? 'Saiba mais',
+      emoji: stringOrNull(map['emoji']) ?? '✨',
+    );
+  }
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String emoji;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'id': id,
+      'title': title,
+      'subtitle': subtitle,
+      'emoji': emoji,
+    };
+  }
+}
+
 class SalonPreview {
   const SalonPreview({
     required this.salonId,
@@ -329,6 +361,8 @@ class SalonPreview {
     required this.appDisplayName,
     required this.tagline,
     required this.brandColor,
+    this.backgroundColor,
+    this.textColor,
     this.secondaryColor,
     this.accentColor,
     this.experienceModel,
@@ -345,6 +379,8 @@ class SalonPreview {
     required this.primaryCtaLabel,
     this.visualStyle,
     this.themeMode,
+    this.fontStyle,
+    this.cornerStyle,
     this.buttonStyle,
     this.cardStyle,
     this.bannerStyle,
@@ -353,6 +389,9 @@ class SalonPreview {
     required this.segmentDescription,
     this.visibleHomeModules = const [],
     required this.moduleLabels,
+    this.highlightBlocks = const [],
+    this.showPrices = true,
+    this.showTeam = true,
     this.addressLabel,
     this.whatsappPhone,
     required this.mapUrl,
@@ -366,6 +405,7 @@ class SalonPreview {
     this.bookingPaymentMode,
     this.bookingRequiresDeposit = false,
     this.bookingDepositAmount,
+    this.bookingDepositPercent,
     this.bookingPaymentInstructions,
     this.bookingPixKey,
     this.bookingPixRecipientName,
@@ -381,6 +421,8 @@ class SalonPreview {
       appDisplayName: stringOrNull(map['appDisplayName']),
       tagline: stringOrNull(map['tagline']),
       brandColor: stringOrNull(map['brandColor']) ?? '#C15F43',
+      backgroundColor: stringOrNull(map['backgroundColor']),
+      textColor: stringOrNull(map['textColor']),
       secondaryColor: stringOrNull(map['secondaryColor']),
       accentColor: stringOrNull(map['accentColor']),
       experienceModel: stringOrNull(map['experienceModel']),
@@ -397,6 +439,8 @@ class SalonPreview {
       primaryCtaLabel: stringOrNull(map['primaryCtaLabel']),
       visualStyle: stringOrNull(map['visualStyle']),
       themeMode: stringOrNull(map['themeMode']),
+      fontStyle: stringOrNull(map['fontStyle']),
+      cornerStyle: stringOrNull(map['cornerStyle']),
       buttonStyle: stringOrNull(map['buttonStyle']),
       cardStyle: stringOrNull(map['cardStyle']),
       bannerStyle: stringOrNull(map['bannerStyle']),
@@ -405,6 +449,11 @@ class SalonPreview {
       segmentDescription: stringOrNull(map['segmentDescription']) ?? '',
       visibleHomeModules: stringList(map['visibleHomeModules']),
       moduleLabels: stringList(map['moduleLabels']),
+      highlightBlocks: jsonMapList(
+        map['highlightBlocks'],
+      ).map(SalonHighlightBlock.fromJson).toList(growable: false),
+      showPrices: map['showPrices'] != false,
+      showTeam: map['showTeam'] != false,
       addressLabel: stringOrNull(map['addressLabel']),
       whatsappPhone: stringOrNull(map['whatsappPhone']),
       mapUrl: stringOrNull(map['mapUrl']),
@@ -418,6 +467,7 @@ class SalonPreview {
       bookingPaymentMode: stringOrNull(map['bookingPaymentMode']),
       bookingRequiresDeposit: map['bookingRequiresDeposit'] == true,
       bookingDepositAmount: doubleOrNull(map['bookingDepositAmount']),
+      bookingDepositPercent: doubleOrNull(map['bookingDepositPercent']),
       bookingPaymentInstructions: stringOrNull(
         map['bookingPaymentInstructions'],
       ),
@@ -436,6 +486,8 @@ class SalonPreview {
   final String? appDisplayName;
   final String? tagline;
   final String brandColor;
+  final String? backgroundColor;
+  final String? textColor;
   final String? secondaryColor;
   final String? accentColor;
   final String? experienceModel;
@@ -452,6 +504,8 @@ class SalonPreview {
   final String? primaryCtaLabel;
   final String? visualStyle;
   final String? themeMode;
+  final String? fontStyle;
+  final String? cornerStyle;
   final String? buttonStyle;
   final String? cardStyle;
   final String? bannerStyle;
@@ -460,6 +514,9 @@ class SalonPreview {
   final String segmentDescription;
   final List<String> visibleHomeModules;
   final List<String> moduleLabels;
+  final List<SalonHighlightBlock> highlightBlocks;
+  final bool showPrices;
+  final bool showTeam;
   final String? addressLabel;
   final String? whatsappPhone;
   final String? mapUrl;
@@ -473,6 +530,7 @@ class SalonPreview {
   final String? bookingPaymentMode;
   final bool bookingRequiresDeposit;
   final double? bookingDepositAmount;
+  final double? bookingDepositPercent;
   final String? bookingPaymentInstructions;
   final String? bookingPixKey;
   final String? bookingPixRecipientName;
@@ -487,6 +545,8 @@ class SalonPreview {
       'appDisplayName': appDisplayName,
       'tagline': tagline,
       'brandColor': brandColor,
+      'backgroundColor': backgroundColor,
+      'textColor': textColor,
       'secondaryColor': secondaryColor,
       'accentColor': accentColor,
       'experienceModel': experienceModel,
@@ -503,6 +563,8 @@ class SalonPreview {
       'primaryCtaLabel': primaryCtaLabel,
       'visualStyle': visualStyle,
       'themeMode': themeMode,
+      'fontStyle': fontStyle,
+      'cornerStyle': cornerStyle,
       'buttonStyle': buttonStyle,
       'cardStyle': cardStyle,
       'bannerStyle': bannerStyle,
@@ -511,6 +573,11 @@ class SalonPreview {
       'segmentDescription': segmentDescription,
       'visibleHomeModules': visibleHomeModules,
       'moduleLabels': moduleLabels,
+      'highlightBlocks': highlightBlocks
+          .map((block) => block.toJson())
+          .toList(),
+      'showPrices': showPrices,
+      'showTeam': showTeam,
       'addressLabel': addressLabel,
       'whatsappPhone': whatsappPhone,
       'mapUrl': mapUrl,
@@ -524,6 +591,7 @@ class SalonPreview {
       'bookingPaymentMode': bookingPaymentMode,
       'bookingRequiresDeposit': bookingRequiresDeposit,
       'bookingDepositAmount': bookingDepositAmount,
+      'bookingDepositPercent': bookingDepositPercent,
       'bookingPaymentInstructions': bookingPaymentInstructions,
       'bookingPixKey': bookingPixKey,
       'bookingPixRecipientName': bookingPixRecipientName,

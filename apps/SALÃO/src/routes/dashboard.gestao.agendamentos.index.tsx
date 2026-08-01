@@ -1,19 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+
+import { NewAppointmentDialog } from "@/components/dashboard/NewAppointmentDialog";
 import { PageHeader } from "@/components/dashboard/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NewAppointmentDialog } from "@/components/dashboard/NewAppointmentDialog";
-import { brl, formatDateBR, statusLabels, statusStyles, useSalon } from "@/lib/salon-store";
 import { today } from "@/lib/salon-seed";
-import { cn } from "@/lib/utils";
+import { brl, formatDateBR, statusLabels, statusStyles, useSalon } from "@/lib/salon-store";
 import type { Appointment, AppointmentStatus } from "@/lib/salon-types";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/dashboard/gestao/agendamentos/")({
-  component: Agenda,
+  component: AgendaPage,
 });
 
 const statuses: AppointmentStatus[] = [
@@ -25,49 +26,81 @@ const statuses: AppointmentStatus[] = [
   "faltou",
 ];
 
-function Agenda() {
-  const { appointments, clients, services, professionals, update } = useSalon();
+function AgendaPage() {
+  const {
+    appointments,
+    clients,
+    services,
+    professionals,
+    setAppointmentDeposit,
+    setAppointmentPlanConsumption,
+    setAppointmentStatus,
+  } = useSalon();
   const [view, setView] = useState("dia");
   const [date, setDate] = useState(today());
-  const [pro, setPro] = useState("todos");
-  const [status, setStatus] = useState("todos");
+  const [professionalFilter, setProfessionalFilter] = useState("todos");
+  const [statusFilter, setStatusFilter] = useState("todos");
   const [editing, setEditing] = useState<Appointment | null>(null);
   const [open, setOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const base = new Date(date);
+
     return appointments
-      .filter((a) => {
-        const ad = new Date(a.date);
-        if (view === "dia" && a.date !== date) return false;
+      .filter((appointment) => {
+        const appointmentDate = new Date(appointment.date);
+        if (view === "dia" && appointment.date !== date) return false;
         if (view === "semana") {
-          const diff = (ad.getTime() - base.getTime()) / 86400000;
+          const diff = (appointmentDate.getTime() - base.getTime()) / 86400000;
           if (diff < 0 || diff > 6) return false;
         }
-        if (view === "mes" && a.date.slice(0, 7) !== date.slice(0, 7)) return false;
-        if (pro !== "todos" && a.professionalId !== pro) return false;
-        if (status !== "todos" && a.status !== status) return false;
+        if (view === "mes" && appointment.date.slice(0, 7) !== date.slice(0, 7)) return false;
+        if (professionalFilter !== "todos" && appointment.professionalId !== professionalFilter) return false;
+        if (statusFilter !== "todos" && appointment.status !== statusFilter) return false;
         return true;
       })
-      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  }, [appointments, view, date, pro, status]);
+      .sort((left, right) => (left.date + left.time).localeCompare(right.date + right.time));
+  }, [appointments, date, professionalFilter, statusFilter, view]);
 
-  const setStatusOf = (id: string, s: AppointmentStatus) => {
-    update("appointments", appointments.map((a) => (a.id === id ? { ...a, status: s } : a)));
-    toast.success(`Status alterado para ${statusLabels[s]}`);
-  };
+  async function handleStatusChange(appointmentId: string, status: AppointmentStatus) {
+    try {
+      await setAppointmentStatus(appointmentId, status);
+      toast.success(`Status alterado para ${statusLabels[status]}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar o status.");
+    }
+  }
 
-  const togglePlan = (a: Appointment) => {
-    update(
-      "appointments",
-      appointments.map((x) => (x.id === a.id ? { ...x, usedPlanSession: !x.usedPlanSession } : x)),
-    );
-    toast.success(a.usedPlanSession ? "Consumo de sessão estornado" : "Sessão do plano consumida");
-  };
+  async function handlePlanConsumption(appointment: Appointment) {
+    if (appointment.status !== "concluido") {
+      toast.error("A sessão do plano só pode ser consumida depois que o atendimento estiver concluído.");
+      return;
+    }
 
-  const setDeposit = (a: Appointment, value: number) => {
-    update("appointments", appointments.map((x) => (x.id === a.id ? { ...x, deposit: value } : x)));
-  };
+    try {
+      await setAppointmentPlanConsumption(appointment.id, !appointment.usedPlanSession);
+      toast.success(
+        appointment.usedPlanSession
+          ? "Sessão do plano estornada"
+          : "Sessão do plano consumida",
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar a sessão do plano.");
+    }
+  }
+
+  async function handleDepositBlur(appointment: Appointment, value: number) {
+    if (Number.isNaN(value) || value === appointment.deposit) {
+      return;
+    }
+
+    try {
+      await setAppointmentDeposit(appointment.id, value);
+      toast.success("Sinal atualizado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar o sinal.");
+    }
+  }
 
   return (
     <>
@@ -95,22 +128,26 @@ function Agenda() {
             <TabsTrigger value="mes">Mês</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-44" />
-        <Select value={pro} onValueChange={setPro}>
+        <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="w-44" />
+        <Select value={professionalFilter} onValueChange={setProfessionalFilter}>
           <SelectTrigger className="w-52"><SelectValue placeholder="Profissional" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos os profissionais</SelectItem>
-            {professionals.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            {professionals.map((professional) => (
+              <SelectItem key={professional.id} value={professional.id}>
+                {professional.name}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-48"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos os status</SelectItem>
-            {statuses.map((s) => (
-              <SelectItem key={s} value={s}>{statusLabels[s]}</SelectItem>
+            {statuses.map((status) => (
+              <SelectItem key={status} value={status}>
+                {statusLabels[status]}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -118,53 +155,65 @@ function Agenda() {
       </div>
 
       <div className="space-y-4">
-        {filtered.map((a) => {
-          const client = clients.find((c) => c.id === a.clientId);
-          const srv = services.find((s) => s.id === a.serviceId);
+        {filtered.map((appointment) => {
+          const client = clients.find((item) => item.id === appointment.clientId);
+          const service = services.find((item) => item.id === appointment.serviceId);
+          const professional = professionals.find((item) => item.id === appointment.professionalId);
+
           return (
-            <div key={a.id} className="panel p-4">
+            <div key={appointment.id} className="panel p-4">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="w-20 border-r border-border pr-4">
-                  <p className="text-sm font-bold">{a.time}</p>
-                  <p className="text-[10px] text-muted-foreground">{formatDateBR(a.date)}</p>
+                  <p className="text-sm font-bold">{appointment.time}</p>
+                  <p className="text-[10px] text-muted-foreground">{formatDateBR(appointment.date)}</p>
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">{client?.name}</p>
                   <p className="truncate text-sm text-muted-foreground">
-                    {srv?.name} · {professionals.find((p) => p.id === a.professionalId)?.name}
+                    {service?.name} · {professional?.name}
                   </p>
                 </div>
-                <span className={cn("rounded-full px-3 py-1 text-[10px] font-bold uppercase", statusStyles[a.status])}>
-                  {statusLabels[a.status]}
+                <span className={cn("rounded-full px-3 py-1 text-[10px] font-bold uppercase", statusStyles[appointment.status])}>
+                  {statusLabels[appointment.status]}
                 </span>
-                <span className="text-sm font-medium">{brl(a.price)}</span>
+                <span className="text-sm font-medium">{brl(appointment.price)}</span>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-                <Select value={a.status} onValueChange={(v) => setStatusOf(a.id, v as AppointmentStatus)}>
+                <Select
+                  value={appointment.status}
+                  onValueChange={(value) => void handleStatusChange(appointment.id, value as AppointmentStatus)}
+                >
                   <SelectTrigger className="h-8 w-44 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {statuses.map((s) => (
-                      <SelectItem key={s} value={s}>{statusLabels[s]}</SelectItem>
+                    {statuses.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {statusLabels[status]}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">Sinal</span>
                   <Input
+                    key={`${appointment.id}-${appointment.deposit}`}
                     type="number"
-                    value={a.deposit}
-                    onChange={(e) => setDeposit(a, Number(e.target.value))}
+                    defaultValue={appointment.deposit}
+                    onBlur={(event) => void handleDepositBlur(appointment, Number(event.target.value))}
                     className="h-8 w-24 text-xs"
                   />
                 </div>
-                <Button size="sm" variant={a.usedPlanSession ? "secondary" : "outline"} onClick={() => togglePlan(a)}>
-                  {a.usedPlanSession ? "Estornar sessão do plano" : "Consumir sessão do plano"}
+                <Button
+                  size="sm"
+                  variant={appointment.usedPlanSession ? "secondary" : "outline"}
+                  onClick={() => void handlePlanConsumption(appointment)}
+                >
+                  {appointment.usedPlanSession ? "Estornar sessão do plano" : "Consumir sessão do plano"}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setEditing(a);
+                    setEditing(appointment);
                     setOpen(true);
                   }}
                 >
