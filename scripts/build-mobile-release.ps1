@@ -15,6 +15,33 @@ $resolvedEnvironmentFile = Join-Path $repoRoot $EnvironmentFile
 $androidDir = Join-Path $mobileDir "android"
 $keyPropertiesPath = Join-Path $androidDir "key.properties"
 $androidLocalPropertiesPath = Join-Path $androidDir "local.properties"
+$safeDartDefineFile = $null
+
+$dartDefineAllowedKeys = @(
+    "PUBLIC_WEB_BASE_URL",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "AUTH_BRIDGE_URL",
+    "ENABLE_FACEBOOK_SIGN_IN",
+    "FIREBASE_API_KEY",
+    "FIREBASE_PROJECT_ID",
+    "FIREBASE_MESSAGING_SENDER_ID",
+    "FIREBASE_AUTH_DOMAIN",
+    "FIREBASE_STORAGE_BUCKET",
+    "FIREBASE_ANDROID_APP_ID",
+    "FIREBASE_IOS_APP_ID",
+    "FIREBASE_APP_ID",
+    "GOOGLE_SERVER_CLIENT_ID",
+    "FIREBASE_WEB_APP_ID",
+    "FIREBASE_IOS_BUNDLE_ID",
+    "DEFAULT_SALON_JOIN_CODE",
+    "FACEBOOK_APP_ID",
+    "FACEBOOK_CLIENT_TOKEN",
+    "FACEBOOK_DISPLAY_NAME",
+    "FACEBOOK_LOGIN_PROTOCOL_SCHEME",
+    "ENABLE_ADMOB_ADS",
+    "ADMOB_BANNER_AD_UNIT_ID"
+)
 
 if (-not (Test-Path (Join-Path $mobileDir "pubspec.yaml"))) {
     throw "Projeto Flutter nao encontrado em apps/mobile."
@@ -78,6 +105,50 @@ function Get-JavaProperties {
     return $properties
 }
 
+function New-SafeDartDefineFile {
+    param(
+        [string]$SourcePath,
+        [string[]]$AllowedKeys
+    )
+
+    $allowedLookup = @{}
+    foreach ($key in $AllowedKeys) {
+        $allowedLookup[$key] = $true
+    }
+
+    $safeLines = New-Object System.Collections.Generic.List[string]
+    $strippedKeys = New-Object System.Collections.Generic.List[string]
+    $content = Get-Content -Path $SourcePath -ErrorAction Stop
+
+    foreach ($line in $content) {
+        $trimmed = $line.Trim()
+
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $parts = $line.Split("=", 2)
+        if ($parts.Count -ne 2) {
+            continue
+        }
+
+        $key = $parts[0].Trim()
+        if ($allowedLookup.ContainsKey($key)) {
+            $safeLines.Add($line)
+        } else {
+            $strippedKeys.Add($key)
+        }
+    }
+
+    $targetPath = Join-Path ([System.IO.Path]::GetTempPath()) ("mobile-dart-defines-" + [System.Guid]::NewGuid().ToString("N") + ".env")
+    Set-Content -Path $targetPath -Value $safeLines -Encoding UTF8
+
+    return @{
+        Path = $targetPath
+        StrippedKeys = $strippedKeys
+    }
+}
+
 $keyProperties = Get-KeyProperties -Path $keyPropertiesPath
 $storeFileValue = $keyProperties["storeFile"]
 $releaseKeystorePath =
@@ -117,12 +188,15 @@ $flutterEngineVersionPath =
         $null
     }
 
+$safeDartDefineResult = New-SafeDartDefineFile -SourcePath $resolvedEnvironmentFile -AllowedKeys $dartDefineAllowedKeys
+$safeDartDefineFile = $safeDartDefineResult["Path"]
+
 $arguments = @(
     "--no-version-check",
     "build",
     $Artifact,
     "--release",
-    "--dart-define-from-file=$resolvedEnvironmentFile"
+    "--dart-define-from-file=$safeDartDefineFile"
 )
 
 if ($BuildName) {
@@ -150,6 +224,9 @@ try {
             (Get-Content -Path $flutterEngineVersionPath -ErrorAction Stop | Select-Object -First 1).Trim()
         Write-Host "FLUTTER_PREBUILT_ENGINE_VERSION configurado para evitar fallback no git local."
     }
+    if ($safeDartDefineResult["StrippedKeys"].Count -gt 0) {
+        Write-Host "Segredos removidos do dart-define: $(([string[]]$safeDartDefineResult["StrippedKeys"] | Sort-Object -Unique) -join ', ')"
+    }
     Write-Host "Executando: flutter $($arguments -join ' ')"
     & flutter @arguments
 
@@ -169,5 +246,8 @@ try {
     Write-Host "Artefato esperado em: $outputPath"
     Write-Host "Modo final: $signingMode"
 } finally {
+    if ($safeDartDefineFile -and (Test-Path $safeDartDefineFile)) {
+        Remove-Item -LiteralPath $safeDartDefineFile -Force -ErrorAction SilentlyContinue
+    }
     Pop-Location
 }
