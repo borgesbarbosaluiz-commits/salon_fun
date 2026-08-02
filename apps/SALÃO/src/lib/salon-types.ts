@@ -1,10 +1,5 @@
 export type AppointmentStatus =
-  | "pendente"
-  | "confirmado"
-  | "em_atendimento"
-  | "concluido"
-  | "cancelado"
-  | "faltou";
+  "pendente" | "confirmado" | "em_atendimento" | "concluido" | "cancelado" | "faltou";
 
 export interface Appointment {
   id: string;
@@ -41,6 +36,7 @@ export interface Professional {
   name: string;
   role: string;
   phone: string;
+  imageUrl?: string;
   commission: number;
   active: boolean;
   serviceIds: string[];
@@ -62,6 +58,7 @@ export interface Service {
   duration: number;
   price: number;
   description: string;
+  imageUrl?: string;
   active: boolean;
 }
 
@@ -92,41 +89,61 @@ export interface Post {
   createdAt: string;
   likes: number;
   comments: { id: string; author: string; text: string }[];
+  imageUrl?: string;
+  imageUrls?: string[];
+  expiresAt?: string | null;
+  professionalId?: string | null;
+  serviceId?: string | null;
 }
 
 export interface Product {
   id: string;
   name: string;
   brand: string;
+  description?: string;
+  imageUrls?: string[];
+  maxPurchaseQuantity?: number;
   price: number;
   stock: number;
   minStock: number;
+  unit?: string;
+  active: boolean;
 }
 
 export interface ProductOrder {
   id: string;
+  customerId: string | null;
   clientName: string;
   productName: string;
   total: number;
-  status: "novo" | "separando" | "pronto" | "entregue";
+  itemCount: number;
+  orderNumber: number;
+  createdAt: string;
+  status: "novo" | "separando" | "pronto" | "entregue" | "cancelado";
 }
 
 export interface Promotion {
   id: string;
   name: string;
+  description?: string;
   discount: number;
   channel: string;
+  imageUrl?: string;
   active: boolean;
   redemptions: number;
 }
 
 export interface Comanda {
   id: string;
+  clientId: string | null;
   clientName: string;
   opened: string;
-  items: { id: string; name: string; price: number }[];
-  payments: { id: string; method: string; amount: number }[];
-  status: "aberta" | "fechada";
+  items: { id: string; name: string; price: number; quantity: number; unitPrice: number }[];
+  payments: { id: string; method: string; amount: number; note?: string | null }[];
+  notes?: string;
+  total: number;
+  paid: number;
+  status: "aberta" | "fechada" | "cancelada";
 }
 
 export interface Block {
@@ -152,6 +169,10 @@ export interface ClientAppConfig {
   heroSubtitle: string;
   heroCta: string;
   heroImage: string;
+  logoImage: string;
+  galleryCoverImage: string;
+  profileCoverImage: string;
+  shareImage: string;
   logoText: string;
   showPrices: boolean;
   showTeam: boolean;

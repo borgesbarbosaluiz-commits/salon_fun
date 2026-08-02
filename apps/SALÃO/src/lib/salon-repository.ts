@@ -33,10 +33,22 @@ type LoadedSalonSnapshot = {
 type SaveServiceInput = Service;
 type SaveClientInput = Client;
 type SaveProfessionalInput = Professional;
+type SaveProductInput = Product;
 type SaveAppointmentInput = Appointment;
 type SaveExpenseInput = Expense;
 type SavePromotionInput = Promotion;
 type SaveTransactionInput = Transaction;
+type SaveSalonPostInput = {
+  body: string;
+  expiresAt?: string | null;
+  format: Post["format"];
+  imageUrl: string;
+  imageUrls?: string[];
+  professionalId?: string | null;
+  serviceId?: string | null;
+  title: string;
+  videoUrl?: string | null;
+};
 
 const weekdayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
 const defaultPostImageUrl = "https://placehold.co/1200x800/f5efe8/6f4e37?text=Salao";
@@ -77,7 +89,7 @@ const dbToUiTransactionMethod: Record<string, Transaction["method"]> = {
 };
 
 const dbToUiOrderStatus: Record<string, ProductOrder["status"]> = {
-  cancelled: "entregue",
+  cancelled: "cancelado",
   completed: "entregue",
   confirmed: "separando",
   pending: "novo",
@@ -85,6 +97,7 @@ const dbToUiOrderStatus: Record<string, ProductOrder["status"]> = {
 };
 
 const uiToDbOrderStatus: Record<ProductOrder["status"], string> = {
+  cancelado: "cancelled",
   entregue: "completed",
   novo: "pending",
   pronto: "ready",
@@ -118,11 +131,7 @@ function colorFromSeed(value: string) {
 }
 
 function initialsFromName(value: string) {
-  const parts = value
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2);
+  const parts = value.trim().split(/\s+/).filter(Boolean).slice(0, 2);
 
   if (!parts.length) {
     return "SL";
@@ -265,18 +274,24 @@ function readConfigBlocks(config: Record<string, unknown>) {
 
       const row = item as any;
       const id =
-        typeof row["id"] === "string" && row["id"].trim() ? row["id"].trim() : `highlight-${index + 1}`;
+        typeof row["id"] === "string" && row["id"].trim()
+          ? row["id"].trim()
+          : `highlight-${index + 1}`;
       const title =
         typeof row["title"] === "string" && row["title"].trim() ? row["title"].trim() : "Destaque";
       const subtitle =
-        typeof row["subtitle"] === "string" && row["subtitle"].trim() ? row["subtitle"].trim() : "Saiba mais";
+        typeof row["subtitle"] === "string" && row["subtitle"].trim()
+          ? row["subtitle"].trim()
+          : "Saiba mais";
       const emoji = typeof row.emoji === "string" && row.emoji.trim() ? row.emoji.trim() : "✨";
 
       return { id, title, subtitle, emoji };
     })
     .filter(Boolean);
 
-  return blocks.length ? (blocks as ClientAppConfig["highlightBlocks"]) : seedClientApp.highlightBlocks;
+  return blocks.length
+    ? (blocks as ClientAppConfig["highlightBlocks"])
+    : seedClientApp.highlightBlocks;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -298,7 +313,11 @@ function normalizeDomainInput(value: string | null | undefined) {
     .replace(/:\d+$/, "");
 }
 
-function normalizeClientAppConfig(input: ClientAppConfig, joinCode: string, settings: SalonSettings): ClientAppConfig {
+function normalizeClientAppConfig(
+  input: ClientAppConfig,
+  joinCode: string,
+  settings: SalonSettings,
+): ClientAppConfig {
   return {
     ...seedClientApp,
     ...input,
@@ -309,11 +328,16 @@ function normalizeClientAppConfig(input: ClientAppConfig, joinCode: string, sett
     autoCancelMinutes: clamp(Math.round(toNumber(input.autoCancelMinutes)), 0, 60),
     backgroundColor: normalizeColorInput(input.backgroundColor, seedClientApp.backgroundColor),
     cancelWindowHours: clamp(Math.round(toNumber(input.cancelWindowHours)), 0, 168),
-    cornerStyle: ["sharp", "soft", "round"].includes(input.cornerStyle) ? input.cornerStyle : seedClientApp.cornerStyle,
+    cornerStyle: ["sharp", "soft", "round"].includes(input.cornerStyle)
+      ? input.cornerStyle
+      : seedClientApp.cornerStyle,
     depositPercent: clamp(Math.round(toNumber(input.depositPercent)), 0, 100),
-    fontStyle: ["serif", "sans", "mono"].includes(input.fontStyle) ? input.fontStyle : seedClientApp.fontStyle,
+    fontStyle: ["serif", "sans", "mono"].includes(input.fontStyle)
+      ? input.fontStyle
+      : seedClientApp.fontStyle,
     heroCta: input.heroCta.trim() || seedClientApp.heroCta,
     heroImage: input.heroImage.trim(),
+    galleryCoverImage: input.galleryCoverImage.trim(),
     heroSubtitle: input.heroSubtitle.trim(),
     heroTitle: input.heroTitle.trim() || ensureTrimmedText(input.appName, "Nome do app"),
     highlightBlocks: input.highlightBlocks
@@ -325,9 +349,15 @@ function normalizeClientAppConfig(input: ClientAppConfig, joinCode: string, sett
       }))
       .slice(0, 8),
     inviteCode: joinCode,
+    logoImage: input.logoImage.trim(),
     logoText: input.logoText.trim() || settings.logoText,
-    primaryColor: normalizeColorInput(input.primaryColor, settings.brandColor || seedClientApp.primaryColor),
+    primaryColor: normalizeColorInput(
+      input.primaryColor,
+      settings.brandColor || seedClientApp.primaryColor,
+    ),
+    profileCoverImage: input.profileCoverImage.trim(),
     requireDeposit: Boolean(input.requireDeposit),
+    shareImage: input.shareImage.trim(),
     showFeed: Boolean(input.showFeed),
     showLoyalty: Boolean(input.showLoyalty),
     showPrices: Boolean(input.showPrices),
@@ -347,7 +377,11 @@ function buildSettingsFromSalon(row: Record<string, unknown>): SalonSettings {
   const name = readSalonString(row, ["name"], seedSettings.name);
 
   return {
-    aiAssist: readSalonBoolean(row, ["auto_pilot_enabled", "ai_assist_enabled"], seedSettings.aiAssist),
+    aiAssist: readSalonBoolean(
+      row,
+      ["auto_pilot_enabled", "ai_assist_enabled"],
+      seedSettings.aiAssist,
+    ),
     brandColor: readSalonString(row, ["brand_color"], seedSettings.brandColor),
     description: readSalonString(row, ["description", "summary"], seedSettings.description),
     email: readSalonString(row, ["email", "contact_email"], seedSettings.email),
@@ -376,74 +410,126 @@ function buildClientAppConfig(
 ) {
   const config = readSalonObject(row, "client_app_config");
 
-  return normalizeClientAppConfig({
-    ...seedClientApp,
-    accentColor: readConfigString(config, "accentColor", seedClientApp.accentColor),
-    address: readConfigString(config, "address", seedClientApp.address),
-    allowOnlineBooking: readConfigBoolean(
-      config,
-      "allowOnlineBooking",
-      readSalonBoolean(row, ["booking_policy_enabled"], seedClientApp.allowOnlineBooking),
-    ),
-    appName: readConfigString(config, "appName", settings.name),
-    autoCancelMinutes: readConfigNumber(
-      config,
-      "autoCancelMinutes",
-      readSalonNumber(row, ["booking_policy_auto_cancel_lead_minutes"], seedClientApp.autoCancelMinutes),
-    ),
-    backgroundColor: readConfigString(config, "backgroundColor", seedClientApp.backgroundColor),
-    cancelWindowHours: readConfigNumber(
-      config,
-      "cancelWindowHours",
-      readSalonNumber(
-        row,
-        ["booking_policy_cancellation_window_hours"],
-        seedClientApp.cancelWindowHours,
+  return normalizeClientAppConfig(
+    {
+      ...seedClientApp,
+      accentColor: readConfigString(config, "accentColor", seedClientApp.accentColor),
+      address: readConfigString(config, "address", seedClientApp.address),
+      allowOnlineBooking: readConfigBoolean(
+        config,
+        "allowOnlineBooking",
+        readSalonBoolean(row, ["booking_policy_enabled"], seedClientApp.allowOnlineBooking),
       ),
-    ),
-    cornerStyle: readConfigChoice(config, "cornerStyle", ["sharp", "soft", "round"], seedClientApp.cornerStyle),
-    depositPercent: readConfigNumber(config, "depositPercent", seedClientApp.depositPercent),
-    fontStyle: readConfigChoice(config, "fontStyle", ["serif", "sans", "mono"], seedClientApp.fontStyle),
-    heroCta: readConfigString(config, "heroCta", seedClientApp.heroCta),
-    heroImage: readConfigString(config, "heroImage", seedClientApp.heroImage),
-    heroSubtitle: readConfigString(config, "heroSubtitle", seedClientApp.heroSubtitle),
-    heroTitle: readConfigString(config, "heroTitle", settings.name),
-    highlightBlocks: readConfigBlocks(config),
-    inviteCode: joinCode,
-    logoText: readConfigString(config, "logoText", settings.logoText),
-    primaryColor: readConfigString(config, "primaryColor", settings.brandColor || seedClientApp.primaryColor),
-    requireDeposit: readConfigBoolean(
-      config,
-      "requireDeposit",
-      readSalonBoolean(row, ["booking_policy_requires_deposit"], seedClientApp.requireDeposit),
-    ),
-    customDomain: readConfigString(config, "customDomain", seedClientApp.customDomain ?? ""),
-    showFeed: readConfigBoolean(config, "showFeed", seedClientApp.showFeed),
-    showLoyalty: readConfigBoolean(config, "showLoyalty", seedClientApp.showLoyalty),
-    showPrices: readConfigBoolean(config, "showPrices", seedClientApp.showPrices),
-    showStore: readConfigBoolean(config, "showStore", seedClientApp.showStore),
-    showTeam: readConfigBoolean(config, "showTeam", seedClientApp.showTeam),
-    supportPhone: readConfigString(config, "supportPhone", settings.phone),
-    tagline: readConfigString(config, "tagline", readSalonString(row, ["tagline"], seedClientApp.tagline)),
-    textColor: readConfigString(config, "textColor", seedClientApp.textColor),
-    theme: readConfigChoice(config, "theme", ["claro", "escuro"], seedClientApp.theme),
-    welcomeMessage: readConfigString(
-      config,
-      "welcomeMessage",
-      readSalonString(row, ["tagline", "description", "summary"], seedClientApp.welcomeMessage),
-    ),
-    whiteLabelActive: readConfigBoolean(config, "whiteLabelActive", seedClientApp.whiteLabelActive ?? false),
-  }, joinCode, settings);
+      appName: readConfigString(config, "appName", settings.name),
+      autoCancelMinutes: readConfigNumber(
+        config,
+        "autoCancelMinutes",
+        readSalonNumber(
+          row,
+          ["booking_policy_auto_cancel_lead_minutes"],
+          seedClientApp.autoCancelMinutes,
+        ),
+      ),
+      backgroundColor: readConfigString(config, "backgroundColor", seedClientApp.backgroundColor),
+      cancelWindowHours: readConfigNumber(
+        config,
+        "cancelWindowHours",
+        readSalonNumber(
+          row,
+          ["booking_policy_cancellation_window_hours"],
+          seedClientApp.cancelWindowHours,
+        ),
+      ),
+      cornerStyle: readConfigChoice(
+        config,
+        "cornerStyle",
+        ["sharp", "soft", "round"],
+        seedClientApp.cornerStyle,
+      ),
+      depositPercent: readConfigNumber(config, "depositPercent", seedClientApp.depositPercent),
+      fontStyle: readConfigChoice(
+        config,
+        "fontStyle",
+        ["serif", "sans", "mono"],
+        seedClientApp.fontStyle,
+      ),
+      heroCta: readConfigString(config, "heroCta", seedClientApp.heroCta),
+      heroImage: readConfigString(config, "heroImage", seedClientApp.heroImage),
+      galleryCoverImage: readConfigString(
+        config,
+        "galleryCoverImage",
+        seedClientApp.galleryCoverImage,
+      ),
+      heroSubtitle: readConfigString(config, "heroSubtitle", seedClientApp.heroSubtitle),
+      heroTitle: readConfigString(config, "heroTitle", settings.name),
+      highlightBlocks: readConfigBlocks(config),
+      inviteCode: joinCode,
+      logoImage: readConfigString(
+        config,
+        "logoImage",
+        readSalonString(row, ["logo_path"], seedClientApp.logoImage),
+      ),
+      logoText: readConfigString(config, "logoText", settings.logoText),
+      primaryColor: readConfigString(
+        config,
+        "primaryColor",
+        settings.brandColor || seedClientApp.primaryColor,
+      ),
+      profileCoverImage: readConfigString(
+        config,
+        "profileCoverImage",
+        seedClientApp.profileCoverImage,
+      ),
+      requireDeposit: readConfigBoolean(
+        config,
+        "requireDeposit",
+        readSalonBoolean(row, ["booking_policy_requires_deposit"], seedClientApp.requireDeposit),
+      ),
+      shareImage: readConfigString(config, "shareImage", seedClientApp.shareImage),
+      customDomain: readConfigString(config, "customDomain", seedClientApp.customDomain ?? ""),
+      showFeed: readConfigBoolean(config, "showFeed", seedClientApp.showFeed),
+      showLoyalty: readConfigBoolean(config, "showLoyalty", seedClientApp.showLoyalty),
+      showPrices: readConfigBoolean(config, "showPrices", seedClientApp.showPrices),
+      showStore: readConfigBoolean(config, "showStore", seedClientApp.showStore),
+      showTeam: readConfigBoolean(config, "showTeam", seedClientApp.showTeam),
+      supportPhone: readConfigString(config, "supportPhone", settings.phone),
+      tagline: readConfigString(
+        config,
+        "tagline",
+        readSalonString(row, ["tagline"], seedClientApp.tagline),
+      ),
+      textColor: readConfigString(config, "textColor", seedClientApp.textColor),
+      theme: readConfigChoice(config, "theme", ["claro", "escuro"], seedClientApp.theme),
+      welcomeMessage: readConfigString(
+        config,
+        "welcomeMessage",
+        readSalonString(row, ["tagline", "description", "summary"], seedClientApp.welcomeMessage),
+      ),
+      whiteLabelActive: readConfigBoolean(
+        config,
+        "whiteLabelActive",
+        seedClientApp.whiteLabelActive ?? false,
+      ),
+    },
+    joinCode,
+    settings,
+  );
 }
 
-function unwrapRequired(result: { data: any; error?: { message?: string | null } | null }, message: string) {
+function unwrapRequired(
+  result: { data: any; error?: { message?: string | null } | null },
+  message: string,
+) {
   if (result.error) {
     throw new Error(result.error.message?.trim() || message);
   }
   return result.data as any;
 }
 
-function unwrapOptional<T>(result: { data: any; error?: { message?: string | null } | null }, fallback: T) {
+function unwrapOptional<T>(
+  result: { data: any; error?: { message?: string | null } | null },
+  fallback: T,
+) {
   if (result.error) {
     return fallback;
   }
@@ -454,11 +540,10 @@ function buildProfessionalHours(rows: any[]) {
   const openRows = rows.filter((row) => row["is_open"] === true);
   const firstOpen = openRows[0] as any;
   const lastOpen = openRows[openRows.length - 1] as any;
-  const startTime = typeof firstOpen?.["opens_at"] === "string" ? firstOpen["opens_at"].slice(0, 5) : "09:00";
+  const startTime =
+    typeof firstOpen?.["opens_at"] === "string" ? firstOpen["opens_at"].slice(0, 5) : "09:00";
   const endTime =
-    typeof lastOpen?.["closes_at"] === "string"
-      ? lastOpen["closes_at"].slice(0, 5)
-      : "18:00";
+    typeof lastOpen?.["closes_at"] === "string" ? lastOpen["closes_at"].slice(0, 5) : "18:00";
 
   return {
     endTime,
@@ -471,7 +556,11 @@ function buildProfessionalHours(rows: any[]) {
 
 export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnapshot | null> {
   const supabase = getSupabase();
-  const salonResult = await supabase.from("salons").select("*").eq("owner_user_id", userId).maybeSingle();
+  const salonResult = await supabase
+    .from("salons")
+    .select("*")
+    .eq("owner_user_id", userId)
+    .maybeSingle();
   const salon = unwrapRequired(salonResult, "Não foi possível carregar o salão.");
 
   if (!salon) {
@@ -512,12 +601,12 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
     supabase.from("service_categories").select("id, name").eq("salon_id", salonId).order("name"),
     supabase
       .from("services")
-      .select("id, name, service_category_id, duration, price, description, is_active")
+      .select("id, name, service_category_id, duration, price, description, image_path, is_active")
       .eq("salon_id", salonId)
       .order("name"),
     supabase
       .from("staff_members")
-      .select("id, name, role, phone, is_active, commission_rate_percent")
+      .select("id, name, role, phone, image_path, is_active, commission_rate_percent")
       .eq("salon_id", salonId)
       .order("name"),
     supabase.from("staff_service_assignments").select("staff_member_id, service_id"),
@@ -544,7 +633,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
       .eq("salon_id", salonId),
     supabase
       .from("appointments")
-      .select("id, customer_id, service_id, staff_member_id, date, status, notes, deposit_amount, service_price_snapshot")
+      .select(
+        "id, customer_id, service_id, staff_member_id, date, status, notes, deposit_amount, service_price_snapshot",
+      )
       .eq("salon_id", salonId)
       .order("date", { ascending: false }),
     supabase
@@ -565,7 +656,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
       .order("due_on"),
     supabase
       .from("salon_recurring_expenses")
-      .select("id, title, category, amount, next_due_on, is_active, cadence, payment_method, notes, last_posted_on")
+      .select(
+        "id, title, category, amount, next_due_on, is_active, cadence, payment_method, notes, last_posted_on",
+      )
       .eq("salon_id", salonId)
       .order("next_due_on"),
     supabase
@@ -576,7 +669,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
       .limit(10),
     supabase
       .from("inventory_products")
-      .select("id, name, brand, retail_price, current_stock, minimum_stock, is_active")
+      .select(
+        "id, name, brand, description, image_paths, max_purchase_quantity, retail_price, current_stock, minimum_stock, unit, is_active",
+      )
       .eq("salon_id", salonId)
       .order("name"),
     supabase
@@ -590,7 +685,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
       .eq("salon_id", salonId),
     supabase
       .from("salon_posts")
-      .select("id, title, caption, created_at")
+      .select(
+        "id, title, caption, created_at, image_path, post_type, expires_at, service_id, staff_member_id, salon_post_images(image_path, sort_order)",
+      )
       .eq("salon_id", salonId)
       .order("created_at", { ascending: false }),
     supabase
@@ -600,30 +697,34 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
     supabase.from("salon_post_likes").select("post_id"),
     supabase
       .from("salon_offers")
-      .select("id, title, highlight_text, price, is_active")
+      .select("id, title, description, highlight_text, image_path, price, is_active")
       .eq("salon_id", salonId)
       .eq("kind", "promotion")
       .order("sort_order")
       .order("created_at"),
     supabase
       .from("customer_tabs")
-      .select("id, customer_id, status, opened_at")
+      .select("id, customer_id, status, opened_at, notes, total_items, total_paid")
       .eq("salon_id", salonId)
       .order("opened_at", { ascending: false }),
     supabase
       .from("customer_tab_items")
-      .select("id, tab_id, description, total")
+      .select(
+        "id, tab_id, description, quantity, unit_price, total, service_id, inventory_product_id",
+      )
       .eq("salon_id", salonId)
       .order("created_at", { ascending: false }),
     supabase
       .from("customer_tab_payments")
-      .select("id, tab_id, method, amount")
+      .select("id, tab_id, method, amount, note")
       .eq("salon_id", salonId)
       .order("created_at", { ascending: false }),
   ]);
 
-  const categoriesRows = unwrapRequired(categoriesResult, "Não foi possível carregar as categorias.") ?? [];
-  const servicesRows = unwrapRequired(servicesResult, "Não foi possível carregar os serviços.") ?? [];
+  const categoriesRows =
+    unwrapRequired(categoriesResult, "Não foi possível carregar as categorias.") ?? [];
+  const servicesRows =
+    unwrapRequired(servicesResult, "Não foi possível carregar os serviços.") ?? [];
   const staffRows = unwrapRequired(staffResult, "Não foi possível carregar a equipe.") ?? [];
   const assignmentsRows = unwrapOptional(assignmentsResult, []);
   const staffHoursRows = unwrapOptional(staffHoursResult, []);
@@ -631,7 +732,8 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
   const clientsRows = unwrapRequired(clientsResult, "Não foi possível carregar os clientes.") ?? [];
   const membershipsRows = unwrapOptional(membershipsResult, []);
   const membershipRedemptionsRows = unwrapOptional(membershipRedemptionsResult, []);
-  const appointmentsRows = unwrapRequired(appointmentsResult, "Não foi possível carregar a agenda.") ?? [];
+  const appointmentsRows =
+    unwrapRequired(appointmentsResult, "Não foi possível carregar a agenda.") ?? [];
   const appointmentPaymentsRows = unwrapOptional(appointmentPaymentsResult, []);
   const financialTransactionsRows = unwrapOptional(financialTransactionsResult, []);
   const payablesRows = unwrapOptional(payablesResult, []);
@@ -651,6 +753,7 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
   const categories: ServiceCategory[] = categoriesRows.map((row: any) => ({
     color: colorFromSeed(String(row.name ?? row.id)),
     id: String(row.id),
+    imageUrl: typeof row.image_path === "string" ? row.image_path : "",
     name: String(row.name ?? "Categoria"),
   }));
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
@@ -679,7 +782,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
     const professionalId = String(row.staff_member_id);
     const current = staffHoursByProfessional.get(professionalId) ?? [];
     current.push(row);
-    current.sort((left, right) => toNumber((left as any)["weekday"]) - toNumber((right as any)["weekday"]));
+    current.sort(
+      (left, right) => toNumber((left as any)["weekday"]) - toNumber((right as any)["weekday"]),
+    );
     staffHoursByProfessional.set(professionalId, current);
   }
 
@@ -690,6 +795,7 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
       commission: toNumber(row.commission_rate_percent),
       endTime: hours.endTime,
       id: String(row.id),
+      imageUrl: typeof row.image_path === "string" ? row.image_path : "",
       name: String(row.name ?? "Profissional"),
       phone: typeof row.phone === "string" ? row.phone : "",
       role: typeof row.role === "string" ? row.role : "",
@@ -698,7 +804,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
       workdays: hours.workdays.length ? hours.workdays : ["Seg", "Ter", "Qua", "Qui", "Sex"],
     };
   });
-  const professionalMap = new Map(professionals.map((professional) => [professional.id, professional]));
+  const professionalMap = new Map(
+    professionals.map((professional) => [professional.id, professional]),
+  );
 
   const activeMembershipByCustomer = new Map<string, any>();
   for (const row of membershipsRows as any[]) {
@@ -741,20 +849,17 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
   const clients: Client[] = clientsRows.map((row: any) => {
     const customerId = String(row.id);
     const customerAppointments = appointmentRowsByCustomer.get(customerId) ?? [];
-    const completedAppointments = customerAppointments.filter((appointment) => appointment.status === "completed");
+    const completedAppointments = customerAppointments.filter(
+      (appointment) => appointment.status === "completed",
+    );
     const lastVisitSource = completedAppointments[0] ?? customerAppointments[0] ?? null;
     const membership = activeMembershipByCustomer.get(customerId);
 
     return {
-      birthday:
-        typeof row.birthday === "string"
-          ? row.birthday
-          : "",
+      birthday: typeof row.birthday === "string" ? row.birthday : "",
       email: typeof row.email === "string" ? row.email : "",
       id: customerId,
-      lastVisit: lastVisitSource
-        ? getDateParts(String(lastVisitSource.date), timeZone).date
-        : "-",
+      lastVisit: lastVisitSource ? getDateParts(String(lastVisitSource.date), timeZone).date : "-",
       name: String(row.name ?? "Cliente"),
       notes: typeof row.notes === "string" ? row.notes : "",
       phone: typeof row.phone === "string" ? row.phone : "",
@@ -763,7 +868,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
         ? Math.max(0, toNumber(membership.sessions_included) - toNumber(membership.sessions_used))
         : undefined,
       since: typeof row.created_at === "string" ? String(row.created_at).slice(0, 10) : "",
-      tags: Array.isArray(row.tags) ? row.tags.filter((tag: unknown) => typeof tag === "string") : [],
+      tags: Array.isArray(row.tags)
+        ? row.tags.filter((tag: unknown) => typeof tag === "string")
+        : [],
       totalSpent: spentByCustomer.get(customerId) ?? 0,
       visits: completedAppointments.length,
     };
@@ -804,7 +911,8 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
   const transactions: Transaction[] = financialTransactionsRows.map((row: any) => ({
     amount: toNumber(row.amount),
     category: typeof row.category === "string" ? row.category : "Geral",
-    date: typeof row.occurred_on === "string" ? row.occurred_on : new Date().toISOString().slice(0, 10),
+    date:
+      typeof row.occurred_on === "string" ? row.occurred_on : new Date().toISOString().slice(0, 10),
     description: typeof row.title === "string" ? row.title : "Transação",
     id: String(row.id),
     method: dbToUiTransactionMethod[String(row.payment_method ?? "").toLowerCase()] ?? "pix",
@@ -837,12 +945,19 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
   ].sort((left, right) => left.dueDate.localeCompare(right.dueDate));
 
   const products: Product[] = (productsRows as any[]).map((row) => ({
+    active: row.is_active !== false,
     brand: typeof row.brand === "string" ? row.brand : "",
+    description: typeof row.description === "string" ? row.description : "",
     id: String(row.id),
+    imageUrls: Array.isArray(row.image_paths)
+      ? row.image_paths.filter((imagePath: unknown) => typeof imagePath === "string")
+      : [],
+    maxPurchaseQuantity: Math.max(1, toNumber(row.max_purchase_quantity) || 1),
     minStock: toNumber(row.minimum_stock),
     name: String(row.name ?? "Produto"),
     price: toNumber(row.retail_price),
     stock: toNumber(row.current_stock),
+    unit: typeof row.unit === "string" && row.unit.trim() ? row.unit : "un",
   }));
 
   const orderItemsByOrder = new Map<string, any[]>();
@@ -853,21 +968,23 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
     orderItemsByOrder.set(orderId, current);
   }
 
-  const orders: ProductOrder[] = (ordersRows as any[])
-    .filter((row) => row.status !== "cancelled")
-    .map((row) => {
-      const customer = clientMap.get(String(row.customer_id));
-      const items = orderItemsByOrder.get(String(row.id)) ?? [];
-      const firstItem = items[0];
+  const orders: ProductOrder[] = (ordersRows as any[]).map((row) => {
+    const customer = clientMap.get(String(row.customer_id));
+    const items = orderItemsByOrder.get(String(row.id)) ?? [];
+    const firstItem = items[0];
 
-      return {
-        clientName: customer?.name ?? "Cliente",
-        id: String(row.id),
-        productName: firstItem?.product_name_snapshot ?? "Pedido",
-        status: dbToUiOrderStatus[String(row.status)] ?? "novo",
-        total: toNumber(row.subtotal_amount),
-      };
-    });
+    return {
+      createdAt: typeof row.created_at === "string" ? String(row.created_at).slice(0, 10) : "",
+      clientName: customer?.name ?? "Cliente",
+      customerId: row.customer_id ? String(row.customer_id) : null,
+      id: String(row.id),
+      itemCount: toNumber(row.total_items),
+      orderNumber: toNumber(row.order_number),
+      productName: firstItem?.product_name_snapshot ?? "Pedido",
+      status: dbToUiOrderStatus[String(row.status)] ?? "novo",
+      total: toNumber(row.subtotal_amount),
+    };
+  });
 
   const commentsByPost = new Map<string, Array<Post["comments"][number]>>();
   for (const row of commentsRows as any[]) {
@@ -887,23 +1004,52 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
     likesByPost.set(postId, (likesByPost.get(postId) ?? 0) + 1);
   }
 
-  const posts: Post[] = (postsRows as any[]).map((row) => ({
-    body: typeof row.caption === "string" ? row.caption : "",
-    comments: commentsByPost.get(String(row.id)) ?? [],
-    createdAt: typeof row.created_at === "string" ? String(row.created_at).slice(0, 10) : "",
-    format: "standard",
-    id: String(row.id),
-    likes: likesByPost.get(String(row.id)) ?? 0,
-    title: String(row.title ?? "Post"),
-  }));
+  const posts: Post[] = (postsRows as any[]).map((row) => {
+    const galleryRows = Array.isArray((row as { salon_post_images?: unknown }).salon_post_images)
+      ? (
+          [...(row as { salon_post_images?: unknown[] }).salon_post_images!] as Array<
+            Record<string, unknown>
+          >
+        ).sort((left, right) => toNumber(left.sort_order) - toNumber(right.sort_order))
+      : [];
+    const imageUrls = galleryRows
+      .map((imageRow) => (typeof imageRow.image_path === "string" ? imageRow.image_path : null))
+      .filter((imagePath): imagePath is string => Boolean(imagePath));
+    const coverImage =
+      typeof row.image_path === "string" && row.image_path.trim() ? row.image_path : null;
+    const normalizedImages = imageUrls.length ? imageUrls : coverImage ? [coverImage] : [];
+
+    return {
+      body: typeof row.caption === "string" ? row.caption : "",
+      comments: commentsByPost.get(String(row.id)) ?? [],
+      createdAt: typeof row.created_at === "string" ? String(row.created_at).slice(0, 10) : "",
+      expiresAt: typeof row.expires_at === "string" ? row.expires_at : null,
+      format:
+        String(row.post_type) === "before_after" ||
+        String(row.post_type) === "reel" ||
+        String(row.post_type) === "story"
+          ? (String(row.post_type) as Post["format"])
+          : "standard",
+      id: String(row.id),
+      imageUrl: normalizedImages[0],
+      imageUrls: normalizedImages,
+      likes: likesByPost.get(String(row.id)) ?? 0,
+      professionalId: row.staff_member_id ? String(row.staff_member_id) : null,
+      serviceId: row.service_id ? String(row.service_id) : null,
+      title: String(row.title ?? "Post"),
+    };
+  });
 
   const promotions: Promotion[] = (offersRows as any[]).map((row) => ({
     active: row.is_active !== false,
-    channel: typeof row.highlight_text === "string" && row.highlight_text.trim()
-      ? row.highlight_text
-      : "App do cliente",
+    channel:
+      typeof row.highlight_text === "string" && row.highlight_text.trim()
+        ? row.highlight_text
+        : "App do cliente",
+    description: typeof row.description === "string" ? row.description : "",
     discount: toNumber(row.price),
     id: String(row.id),
+    imageUrl: typeof row.image_path === "string" ? row.image_path : "",
     name: String(row.title ?? "Promoção"),
     redemptions: 0,
   }));
@@ -915,7 +1061,9 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
     current.push({
       id: String(row.id),
       name: String(row.description ?? "Item"),
+      quantity: toNumber(row.quantity) || 1,
       price: toNumber(row.total),
+      unitPrice: toNumber(row.unit_price),
     });
     tabItemsByTab.set(tabId, current);
   }
@@ -928,6 +1076,7 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
       amount: toNumber(row.amount),
       id: String(row.id),
       method: typeof row.method === "string" ? row.method : "pix",
+      note: typeof row.note === "string" ? row.note : null,
     });
     tabPaymentsByTab.set(tabId, current);
   }
@@ -936,12 +1085,17 @@ export async function loadSalonSnapshot(userId: string): Promise<LoadedSalonSnap
     const customer = row.customer_id ? clientMap.get(String(row.customer_id)) : null;
     const opened = getDateParts(String(row.opened_at), timeZone);
     return {
+      clientId: row.customer_id ? String(row.customer_id) : null,
       clientName: customer?.name ?? "Cliente avulso",
       id: String(row.id),
       items: tabItemsByTab.get(String(row.id)) ?? [],
+      notes: typeof row.notes === "string" ? row.notes : undefined,
       opened: opened.time,
+      paid: toNumber(row.total_paid),
       payments: tabPaymentsByTab.get(String(row.id)) ?? [],
-      status: row.status === "open" ? "aberta" : "fechada",
+      status:
+        row.status === "open" ? "aberta" : row.status === "cancelled" ? "cancelada" : "fechada",
+      total: toNumber(row.total_items),
     };
   });
 
@@ -1006,14 +1160,18 @@ export async function saveClientAppConfig(salonId: string, input: ClientAppConfi
     fontStyle: normalized.fontStyle,
     heroCta: normalized.heroCta,
     heroImage: normalized.heroImage,
+    galleryCoverImage: normalized.galleryCoverImage,
     heroSubtitle: normalized.heroSubtitle,
     heroTitle: normalized.heroTitle,
     highlightBlocks: normalized.highlightBlocks,
     inviteCode: normalized.inviteCode,
+    logoImage: normalized.logoImage,
     logoText: normalized.logoText,
     primaryColor: normalized.primaryColor,
     customDomain: normalized.customDomain,
+    profileCoverImage: normalized.profileCoverImage,
     requireDeposit: normalized.requireDeposit,
+    shareImage: normalized.shareImage,
     showFeed: normalized.showFeed,
     showLoyalty: normalized.showLoyalty,
     showPrices: normalized.showPrices,
@@ -1035,6 +1193,7 @@ export async function saveClientAppConfig(salonId: string, input: ClientAppConfi
     booking_policy_requires_deposit: normalized.requireDeposit,
     brand_color: normalized.primaryColor,
     client_app_config: clientAppConfigPayload,
+    logo_path: normalized.logoImage || null,
     name: normalized.appName,
     tagline: normalized.tagline || null,
     whatsapp_phone: normalized.supportPhone || null,
@@ -1079,6 +1238,7 @@ export async function saveService(salonId: string, input: SaveServiceInput, cate
     category: categoryName,
     description: input.description?.trim() || null,
     duration: input.duration,
+    image_path: input.imageUrl?.trim() || null,
     is_active: input.active,
     name: ensureTrimmedText(input.name, "Nome do serviço"),
     price: input.price,
@@ -1097,7 +1257,11 @@ export async function saveService(salonId: string, input: SaveServiceInput, cate
 }
 
 export async function deleteService(salonId: string, serviceId: string) {
-  const result = await getSupabase().from("services").delete().eq("id", serviceId).eq("salon_id", salonId);
+  const result = await getSupabase()
+    .from("services")
+    .delete()
+    .eq("id", serviceId)
+    .eq("salon_id", salonId);
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível excluir o serviço.");
@@ -1127,7 +1291,11 @@ export async function saveClient(salonId: string, input: SaveClientInput) {
 }
 
 export async function deleteClient(salonId: string, clientId: string) {
-  const result = await getSupabase().from("customers").delete().eq("id", clientId).eq("salon_id", salonId);
+  const result = await getSupabase()
+    .from("customers")
+    .delete()
+    .eq("id", clientId)
+    .eq("salon_id", salonId);
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível excluir o cliente.");
@@ -1150,11 +1318,18 @@ async function syncProfessionalAssignments(professionalId: string, serviceIds: s
   );
 
   if (result.error) {
-    throw new Error(result.error.message || "Não foi possível sincronizar os serviços do profissional.");
+    throw new Error(
+      result.error.message || "Não foi possível sincronizar os serviços do profissional.",
+    );
   }
 }
 
-async function syncProfessionalHours(professionalId: string, workdays: string[], startTime: string, endTime: string) {
+async function syncProfessionalHours(
+  professionalId: string,
+  workdays: string[],
+  startTime: string,
+  endTime: string,
+) {
   const rows = weekdayLabels.map((label, weekday) => {
     const isOpen = workdays.includes(label);
 
@@ -1178,6 +1353,7 @@ export async function saveProfessional(salonId: string, input: SaveProfessionalI
   const supabase = getSupabase();
   const payload = {
     commission_rate_percent: input.commission,
+    image_path: input.imageUrl?.trim() || null,
     is_active: input.active,
     name: ensureTrimmedText(input.name, "Nome do profissional"),
     phone: input.phone?.trim() || null,
@@ -1211,6 +1387,46 @@ export async function deleteProfessional(salonId: string, professionalId: string
   }
 }
 
+export async function saveProduct(salonId: string, input: SaveProductInput) {
+  const normalizedImagePaths = Array.from(
+    new Set((input.imageUrls ?? []).map((imagePath) => imagePath?.trim()).filter(Boolean)),
+  ).slice(0, 6) as string[];
+
+  const payload = {
+    brand: input.brand?.trim() || null,
+    current_stock: Math.max(0, toNumber(input.stock)),
+    description: input.description?.trim() || null,
+    image_paths: normalizedImagePaths,
+    is_active: input.active,
+    max_purchase_quantity: clamp(Math.round(toNumber(input.maxPurchaseQuantity ?? 1)), 1, 99),
+    minimum_stock: Math.max(0, toNumber(input.minStock)),
+    name: ensureTrimmedText(input.name, "Nome do produto"),
+    retail_price: Math.max(0, toNumber(input.price)),
+    salon_id: salonId,
+    unit: input.unit?.trim() || "un",
+  };
+  const table = getSupabase().from("inventory_products");
+  const result = input.id
+    ? await table.update(payload).eq("id", input.id).eq("salon_id", salonId)
+    : await table.insert(payload);
+
+  if (result.error) {
+    throw new Error(result.error.message || "NÃ£o foi possÃ­vel salvar o produto.");
+  }
+}
+
+export async function deleteProduct(salonId: string, productId: string) {
+  const result = await getSupabase()
+    .from("inventory_products")
+    .delete()
+    .eq("id", productId)
+    .eq("salon_id", salonId);
+
+  if (result.error) {
+    throw new Error(result.error.message || "NÃ£o foi possÃ­vel excluir o produto.");
+  }
+}
+
 export async function saveBlock(salonId: string, input: Block) {
   const supabase = getSupabase();
   const payload = {
@@ -1231,7 +1447,11 @@ export async function saveBlock(salonId: string, input: Block) {
 }
 
 export async function deleteBlock(salonId: string, blockId: string) {
-  const result = await getSupabase().from("staff_blocks").delete().eq("id", blockId).eq("salon_id", salonId);
+  const result = await getSupabase()
+    .from("staff_blocks")
+    .delete()
+    .eq("id", blockId)
+    .eq("salon_id", salonId);
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível remover o bloqueio.");
@@ -1276,7 +1496,9 @@ export async function saveAppointment(input: SaveAppointmentInput) {
     .eq("id", appointmentId);
 
   if (depositResult.error) {
-    throw new Error(depositResult.error.message || "Não foi possível salvar o sinal do agendamento.");
+    throw new Error(
+      depositResult.error.message || "Não foi possível salvar o sinal do agendamento.",
+    );
   }
 }
 
@@ -1355,34 +1577,41 @@ export async function setAppointmentPlanConsumption(appointmentId: string, consu
 }
 
 export async function createFinancialTransaction(salonId: string, input: SaveTransactionInput) {
-  const result = await getSupabase().from("salon_financial_transactions").insert({
-    amount: input.amount,
-    category: ensureTrimmedText(input.category, "Categoria"),
-    entry_type: input.type === "saida" ? "expense" : "income",
-    occurred_on: input.date,
-    payment_method: uiToDbTransactionMethod[input.method],
-    salon_id: salonId,
-    source: "manual",
-    title: ensureTrimmedText(input.description, "Descrição"),
-  });
+  const result = await getSupabase()
+    .from("salon_financial_transactions")
+    .insert({
+      amount: input.amount,
+      category: ensureTrimmedText(input.category, "Categoria"),
+      entry_type: input.type === "saida" ? "expense" : "income",
+      occurred_on: input.date,
+      payment_method: uiToDbTransactionMethod[input.method],
+      salon_id: salonId,
+      source: "manual",
+      title: ensureTrimmedText(input.description, "Descrição"),
+    });
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível registrar a transação.");
   }
 }
 
-export async function createTeamPayout(salonId: string, input: { amount: number; professionalId: string; title: string }) {
-  const result = await getSupabase().from("salon_financial_transactions").insert({
-    amount: input.amount,
-    category: "Comissão",
-    entry_type: "expense",
-    occurred_on: new Date().toISOString().slice(0, 10),
-    payment_method: "pix",
-    salon_id: salonId,
-    source: "team_payout",
-    staff_member_id: input.professionalId,
-    title: input.title,
-  });
+export async function createTeamPayout(
+  salonId: string,
+  input: { amount: number; professionalId: string; title: string },
+) {
+  const result = await getSupabase()
+    .from("salon_financial_transactions")
+    .insert({
+      amount: input.amount,
+      category: "Comissão",
+      entry_type: "expense",
+      occurred_on: new Date().toISOString().slice(0, 10),
+      payment_method: "pix",
+      salon_id: salonId,
+      source: "team_payout",
+      staff_member_id: input.professionalId,
+      title: input.title,
+    });
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível criar o repasse.");
@@ -1483,7 +1712,11 @@ export async function saveExpense(salonId: string, input: SaveExpenseInput) {
       title: ensureTrimmedText(input.description, "Descrição"),
     };
     const result = recurringId
-      ? await supabase.from("salon_recurring_expenses").update(payload).eq("id", recurringId).eq("salon_id", salonId)
+      ? await supabase
+          .from("salon_recurring_expenses")
+          .update(payload)
+          .eq("id", recurringId)
+          .eq("salon_id", salonId)
       : await supabase.from("salon_recurring_expenses").insert(payload);
 
     if (result.error) {
@@ -1503,7 +1736,11 @@ export async function saveExpense(salonId: string, input: SaveExpenseInput) {
     title: ensureTrimmedText(input.description, "Descrição"),
   };
   const result = payableId
-    ? await supabase.from("salon_payables").update(payload).eq("id", payableId).eq("salon_id", salonId)
+    ? await supabase
+        .from("salon_payables")
+        .update(payload)
+        .eq("id", payableId)
+        .eq("salon_id", salonId)
     : await supabase.from("salon_payables").insert(payload);
 
   if (result.error) {
@@ -1511,7 +1748,11 @@ export async function saveExpense(salonId: string, input: SaveExpenseInput) {
   }
 }
 
-export async function setRecurringExpenseActive(salonId: string, expenseId: string, active: boolean) {
+export async function setRecurringExpenseActive(
+  salonId: string,
+  expenseId: string,
+  active: boolean,
+) {
   if (!expenseId.startsWith("recurring:")) {
     return;
   }
@@ -1539,7 +1780,10 @@ export async function markExpensePaid(salonId: string, expense: Expense) {
       .eq("id", recurringId)
       .eq("salon_id", salonId)
       .maybeSingle();
-    const recurring = unwrapRequired(recurringResult, "Não foi possível localizar a recorrência.") as any;
+    const recurring = unwrapRequired(
+      recurringResult,
+      "Não foi possível localizar a recorrência.",
+    ) as any;
     const cadence = (recurring?.cadence ?? "monthly") as "weekly" | "monthly" | "yearly";
 
     const updateResult = await supabase
@@ -1552,7 +1796,9 @@ export async function markExpensePaid(salonId: string, expense: Expense) {
       .eq("salon_id", salonId);
 
     if (updateResult.error) {
-      throw new Error(updateResult.error.message || "Não foi possível baixar a despesa recorrente.");
+      throw new Error(
+        updateResult.error.message || "Não foi possível baixar a despesa recorrente.",
+      );
     }
 
     const transactionResult = await supabase.from("salon_financial_transactions").insert({
@@ -1568,7 +1814,9 @@ export async function markExpensePaid(salonId: string, expense: Expense) {
     });
 
     if (transactionResult.error) {
-      throw new Error(transactionResult.error.message || "Não foi possível registrar a baixa financeira.");
+      throw new Error(
+        transactionResult.error.message || "Não foi possível registrar a baixa financeira.",
+      );
     }
     return;
   }
@@ -1600,7 +1848,9 @@ export async function markExpensePaid(salonId: string, expense: Expense) {
   });
 
   if (transactionResult.error) {
-    throw new Error(transactionResult.error.message || "Não foi possível registrar a saída no caixa.");
+    throw new Error(
+      transactionResult.error.message || "Não foi possível registrar a saída no caixa.",
+    );
   }
 }
 
@@ -1618,8 +1868,32 @@ export async function incrementInventoryProduct(productId: string) {
   }
 }
 
-export async function advanceStoreOrderStatus(orderId: string, currentStatus: ProductOrder["status"]) {
+export async function registerInventoryMovement(input: {
+  movementType: "adjustment" | "in" | "out";
+  productId: string;
+  quantity: number;
+  reason?: string | null;
+  staffMemberId?: string | null;
+}) {
+  const result = await getSupabase().rpc("register_inventory_movement", {
+    movement_type_input: input.movementType,
+    product_id_input: input.productId,
+    quantity_input: input.quantity,
+    reason_input: input.reason?.trim() || null,
+    staff_member_id_input: input.staffMemberId ?? null,
+  });
+
+  if (result.error) {
+    throw new Error(result.error.message || "NÃ£o foi possÃ­vel movimentar o estoque.");
+  }
+}
+
+export async function advanceStoreOrderStatus(
+  orderId: string,
+  currentStatus: ProductOrder["status"],
+) {
   const nextStatus: Record<ProductOrder["status"], string> = {
+    cancelado: "cancelled",
     entregue: "completed",
     novo: "confirmed",
     pronto: "completed",
@@ -1637,21 +1911,98 @@ export async function advanceStoreOrderStatus(orderId: string, currentStatus: Pr
   }
 }
 
-export async function createPost(salonId: string, title: string, body: string) {
-  const result = await getSupabase().from("salon_posts").insert({
-    caption: body.trim() || null,
-    image_path: defaultPostImageUrl,
-    salon_id: salonId,
-    title: ensureTrimmedText(title, "Título do post"),
+export async function setStoreOrderStatus(input: {
+  cancellationReason?: string | null;
+  orderId: string;
+  status: ProductOrder["status"];
+}) {
+  const result = await getSupabase().rpc("update_customer_product_order_status", {
+    cancellation_reason_input:
+      input.status === "cancelado"
+        ? ensureTrimmedText(input.cancellationReason ?? "", "Motivo do cancelamento")
+        : null,
+    order_id_input: input.orderId,
+    status_input: uiToDbOrderStatus[input.status],
   });
+
+  if (result.error) {
+    throw new Error(result.error.message || "NÃ£o foi possÃ­vel atualizar o pedido.");
+  }
+}
+
+export async function createPost(salonId: string, title: string, body: string) {
+  const result = await getSupabase()
+    .from("salon_posts")
+    .insert({
+      caption: body.trim() || null,
+      image_path: defaultPostImageUrl,
+      salon_id: salonId,
+      title: ensureTrimmedText(title, "Título do post"),
+    });
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível publicar o post.");
   }
 }
 
+export async function saveSalonPost(salonId: string, input: SaveSalonPostInput) {
+  const format = input.format;
+  const normalizedImageUrls = Array.from(
+    new Set(
+      (input.imageUrls?.length ? input.imageUrls : [input.imageUrl])
+        .map((imageUrl) => imageUrl.trim())
+        .filter(Boolean),
+    ),
+  );
+  const primaryImage =
+    normalizedImageUrls[0] ?? ensureTrimmedText(input.imageUrl, "Imagem do post");
+  const supabase = getSupabase();
+  const result = await supabase
+    .from("salon_posts")
+    .insert({
+      caption: input.body.trim() || null,
+      expires_at:
+        format === "story"
+          ? (input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
+          : null,
+      image_path: primaryImage,
+      post_type: format,
+      salon_id: salonId,
+      service_id: input.serviceId ?? null,
+      staff_member_id: input.professionalId ?? null,
+      title: ensureTrimmedText(input.title, "TÃ­tulo do post"),
+      video_path:
+        format === "reel" ? ensureTrimmedText(input.videoUrl ?? "", "VÃ­deo do reel") : null,
+    })
+    .select("id")
+    .single();
+
+  if (result.error) {
+    throw new Error(result.error.message || "NÃ£o foi possÃ­vel publicar o post.");
+  }
+
+  if (normalizedImageUrls.length) {
+    const galleryResult = await supabase.from("salon_post_images").insert(
+      normalizedImageUrls.map((imagePath, index) => ({
+        image_path: imagePath,
+        post_id: result.data.id,
+        sort_order: index,
+      })),
+    );
+
+    if (galleryResult.error) {
+      await supabase.from("salon_posts").delete().eq("id", result.data.id).eq("salon_id", salonId);
+      throw new Error(galleryResult.error.message || "Nao foi possivel salvar as fotos do post.");
+    }
+  }
+}
+
 export async function deletePost(salonId: string, postId: string) {
-  const result = await getSupabase().from("salon_posts").delete().eq("id", postId).eq("salon_id", salonId);
+  const result = await getSupabase()
+    .from("salon_posts")
+    .delete()
+    .eq("id", postId)
+    .eq("salon_id", salonId);
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível excluir o post.");
@@ -1660,7 +2011,9 @@ export async function deletePost(salonId: string, postId: string) {
 
 export async function savePromotion(salonId: string, input: SavePromotionInput) {
   const payload = {
+    description: input.description?.trim() || null,
     highlight_text: input.channel?.trim() || null,
+    image_path: input.imageUrl?.trim() || null,
     is_active: input.active,
     kind: "promotion",
     price: input.discount,
@@ -1678,7 +2031,11 @@ export async function savePromotion(salonId: string, input: SavePromotionInput) 
 }
 
 export async function deletePromotion(salonId: string, promotionId: string) {
-  const result = await getSupabase().from("salon_offers").delete().eq("id", promotionId).eq("salon_id", salonId);
+  const result = await getSupabase()
+    .from("salon_offers")
+    .delete()
+    .eq("id", promotionId)
+    .eq("salon_id", salonId);
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível excluir a campanha.");
@@ -1686,18 +2043,43 @@ export async function deletePromotion(salonId: string, promotionId: string) {
 }
 
 export async function openCustomerTab(salonId: string, clientName: string) {
-  const result = await getSupabase().from("customer_tabs").insert({
-    notes: clientName.trim() || "Cliente avulso",
-    salon_id: salonId,
-    status: "open",
-  });
+  const result = await getSupabase()
+    .from("customer_tabs")
+    .insert({
+      notes: clientName.trim() || "Cliente avulso",
+      salon_id: salonId,
+      status: "open",
+    });
 
   if (result.error) {
     throw new Error(result.error.message || "Não foi possível abrir a comanda.");
   }
 }
 
-export async function appendCustomerTabItem(salonId: string, tabId: string, itemName: string, amount: number) {
+export async function openCustomerTabEntry(
+  salonId: string,
+  input: { clientId?: string | null; notes?: string | null },
+) {
+  const result = await getSupabase()
+    .from("customer_tabs")
+    .insert({
+      customer_id: input.clientId ?? null,
+      notes: input.notes?.trim() || null,
+      salon_id: salonId,
+      status: "open",
+    });
+
+  if (result.error) {
+    throw new Error(result.error.message || "NÃ£o foi possÃ­vel abrir a comanda.");
+  }
+}
+
+export async function appendCustomerTabItem(
+  salonId: string,
+  tabId: string,
+  itemName: string,
+  amount: number,
+) {
   const result = await getSupabase().from("customer_tab_items").insert({
     description: itemName,
     quantity: 1,
@@ -1711,7 +2093,41 @@ export async function appendCustomerTabItem(salonId: string, tabId: string, item
   }
 }
 
-export async function appendCustomerTabPayment(salonId: string, tabId: string, amount: number, method = "pix") {
+export async function appendCustomerTabItemEntry(
+  salonId: string,
+  input: {
+    amount: number;
+    inventoryProductId?: string | null;
+    itemName: string;
+    quantity?: number;
+    serviceId?: string | null;
+    tabId: string;
+  },
+) {
+  const quantity = input.quantity && input.quantity > 0 ? input.quantity : 1;
+  const result = await getSupabase()
+    .from("customer_tab_items")
+    .insert({
+      description: ensureTrimmedText(input.itemName, "DescriÃ§Ã£o do item"),
+      inventory_product_id: input.inventoryProductId ?? null,
+      quantity,
+      salon_id: salonId,
+      service_id: input.serviceId ?? null,
+      tab_id: input.tabId,
+      unit_price: Math.max(0, input.amount),
+    });
+
+  if (result.error) {
+    throw new Error(result.error.message || "NÃ£o foi possÃ­vel adicionar o item.");
+  }
+}
+
+export async function appendCustomerTabPayment(
+  salonId: string,
+  tabId: string,
+  amount: number,
+  method = "pix",
+) {
   const supabase = getSupabase();
   const paymentResult = await supabase.from("customer_tab_payments").insert({
     amount,
@@ -1736,7 +2152,46 @@ export async function appendCustomerTabPayment(salonId: string, tabId: string, a
   });
 
   if (transactionResult.error) {
-    throw new Error(transactionResult.error.message || "Não foi possível registrar a entrada da comanda.");
+    throw new Error(
+      transactionResult.error.message || "Não foi possível registrar a entrada da comanda.",
+    );
+  }
+}
+
+export async function appendCustomerTabPaymentEntry(
+  salonId: string,
+  input: { amount: number; method: string; note?: string | null; tabId: string },
+) {
+  const supabase = getSupabase();
+  const normalizedAmount = Math.max(0, input.amount);
+  const normalizedMethod = ensureTrimmedText(input.method, "MÃ©todo de pagamento");
+  const paymentResult = await supabase.from("customer_tab_payments").insert({
+    amount: normalizedAmount,
+    method: normalizedMethod,
+    note: input.note?.trim() || null,
+    salon_id: salonId,
+    tab_id: input.tabId,
+  });
+
+  if (paymentResult.error) {
+    throw new Error(paymentResult.error.message || "NÃ£o foi possÃ­vel registrar o pagamento.");
+  }
+
+  const transactionResult = await supabase.from("salon_financial_transactions").insert({
+    amount: normalizedAmount,
+    category: "Comanda",
+    entry_type: "income",
+    occurred_on: new Date().toISOString().slice(0, 10),
+    payment_method: normalizedMethod,
+    salon_id: salonId,
+    source: "customer_tab",
+    title: "Recebimento de comanda",
+  });
+
+  if (transactionResult.error) {
+    throw new Error(
+      transactionResult.error.message || "NÃ£o foi possÃ­vel registrar a entrada da comanda.",
+    );
   }
 }
 

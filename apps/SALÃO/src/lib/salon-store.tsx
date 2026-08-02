@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { seedClientApp, seedSettings } from "./salon-seed";
 import {
   appendCustomerTabItem,
@@ -12,6 +20,7 @@ import {
   deleteCategory,
   deleteClient,
   deletePost,
+  deleteProduct,
   deleteProfessional,
   deletePromotion,
   deleteService,
@@ -25,6 +34,7 @@ import {
   saveClient,
   saveClientAppConfig,
   saveExpense,
+  saveProduct,
   saveProfessional,
   savePromotion,
   saveService,
@@ -53,7 +63,11 @@ import type {
   ServiceCategory,
   Transaction,
 } from "./salon-types";
-import { getCurrentPanelSession, restorePanelSessionFromFirebase, signOutPanelSession } from "./panel-auth";
+import {
+  getCurrentPanelSession,
+  restorePanelSessionFromFirebase,
+  signOutPanelSession,
+} from "./panel-auth";
 
 const initialState: SalonState = {
   appointments: [],
@@ -82,6 +96,7 @@ interface SalonContextValue extends SalonState {
   createOrUpdateCategory: (value: { id?: string; name: string }) => Promise<void>;
   createOrUpdateClient: (value: Client) => Promise<void>;
   createOrUpdateExpense: (value: Expense) => Promise<void>;
+  createOrUpdateProduct: (value: Product) => Promise<void>;
   createOrUpdateProfessional: (value: Professional) => Promise<void>;
   createOrUpdatePromotion: (value: Promotion) => Promise<void>;
   createOrUpdateService: (value: Service) => Promise<void>;
@@ -91,6 +106,7 @@ interface SalonContextValue extends SalonState {
   deleteCategory: (categoryId: string) => Promise<void>;
   deleteClient: (clientId: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
+  deleteProduct: (productId: string) => Promise<void>;
   deleteProfessional: (professionalId: string) => Promise<void>;
   deletePromotion: (promotionId: string) => Promise<void>;
   deleteService: (serviceId: string) => Promise<void>;
@@ -100,6 +116,7 @@ interface SalonContextValue extends SalonState {
   isRealData: boolean;
   markExpensePaid: (expense: Expense) => Promise<void>;
   openComanda: (clientName: string) => Promise<void>;
+  salonId: string | null;
   publishPost: (text: string) => Promise<void>;
   refresh: () => Promise<void>;
   update: <K extends keyof SalonState>(key: K, value: SalonState[K]) => void;
@@ -190,7 +207,9 @@ export function SalonProvider({ children }: { children: ReactNode }) {
         setState(initialState);
         setSalonId(null);
         setUserId(null);
-        setError(nextError instanceof Error ? nextError.message : "Não foi possível carregar o painel.");
+        setError(
+          nextError instanceof Error ? nextError.message : "Não foi possível carregar o painel.",
+        );
       }
     }
 
@@ -248,7 +267,8 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     async (value: Service) => {
       await runRemote(async () => {
         const categoryName =
-          state.categories.find((category) => category.id === value.categoryId)?.name ?? "Categoria";
+          state.categories.find((category) => category.id === value.categoryId)?.name ??
+          "Categoria";
         await saveService(ensureSalonId(), value, categoryName);
       });
     },
@@ -268,6 +288,15 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     async (value: Professional) => {
       await runRemote(async () => {
         await saveProfessional(ensureSalonId(), value);
+      });
+    },
+    [ensureSalonId, runRemote],
+  );
+
+  const createOrUpdateProduct = useCallback(
+    async (value: Product) => {
+      await runRemote(async () => {
+        await saveProduct(ensureSalonId(), value);
       });
     },
     [ensureSalonId, runRemote],
@@ -511,6 +540,15 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     [ensureSalonId, runRemote],
   );
 
+  const deleteProductRecord = useCallback(
+    async (productId: string) => {
+      await runRemote(async () => {
+        await deleteProduct(ensureSalonId(), productId);
+      });
+    },
+    [ensureSalonId, runRemote],
+  );
+
   const deleteBlockRecord = useCallback(
     async (blockId: string) => {
       await runRemote(async () => {
@@ -536,6 +574,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       createOrUpdateCategory,
       createOrUpdateClient,
       createOrUpdateExpense,
+      createOrUpdateProduct,
       createOrUpdateProfessional,
       createOrUpdatePromotion,
       createOrUpdateService,
@@ -545,6 +584,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       deleteCategory: deleteCategoryRecord,
       deleteClient: deleteClientRecord,
       deletePost: removePost,
+      deleteProduct: deleteProductRecord,
       deleteProfessional: deleteProfessionalRecord,
       deletePromotion: removePromotion,
       deleteService: deleteServiceRecord,
@@ -558,6 +598,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       publishPost,
       refresh,
       reset,
+      salonId,
       saveClientApp: saveClientAppRecord,
       saveBlock: saveBlockRecord,
       setAppointmentDeposit: setAppointmentDepositRecord,
@@ -578,6 +619,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       createOrUpdateCategory,
       createOrUpdateClient,
       createOrUpdateExpense,
+      createOrUpdateProduct,
       createOrUpdateProfessional,
       createOrUpdatePromotion,
       createOrUpdateService,
@@ -586,6 +628,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       deleteBlockRecord,
       deleteCategoryRecord,
       deleteClientRecord,
+      deleteProductRecord,
       deleteProfessionalRecord,
       deleteServiceRecord,
       error,
@@ -598,9 +641,9 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       removePost,
       removePromotion,
       reset,
+      salonId,
       saveClientAppRecord,
       saveBlockRecord,
-      salonId,
       setAppointmentDepositRecord,
       setAppointmentPlanConsumptionRecord,
       setAppointmentStatusRecord,

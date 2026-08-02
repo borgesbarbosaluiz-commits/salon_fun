@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { GenericRuntimeModule } from "@/components/dashboard/module-runtime";
+import { supportsProductionPanelModule } from "@/components/dashboard/production-module-keys";
+import { ProductionPanelModule } from "@/components/dashboard/production-module-runtime";
 import { PageHeader, StatCard } from "@/components/dashboard/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +24,10 @@ export default function ModulePage({
     appointments,
     clients,
     comandas,
+    createOrUpdatePromotion,
+    deletePost,
+    deletePromotion,
+    incrementProductStock,
     openComanda,
     orders,
     posts,
@@ -34,10 +41,6 @@ export default function ModulePage({
     updateComandaWithPayment,
     updateComandaWithStatus,
     updateOrderStatus,
-    incrementProductStock,
-    deletePost,
-    createOrUpdatePromotion,
-    deletePromotion,
   } = salon;
   const [text, setText] = useState("");
 
@@ -47,18 +50,30 @@ export default function ModulePage({
 
   async function handleCopyPhone(phone: string, name: string) {
     if (!phone.trim()) {
-      toast.error("Este cliente não possui telefone cadastrado.");
+      toast.error("Este cliente nao possui telefone cadastrado.");
       return;
     }
 
     if (typeof navigator === "undefined" || !navigator.clipboard) {
-      toast.error("O navegador não liberou a área de transferência.");
+      toast.error("O navegador nao liberou a area de transferencia.");
       return;
     }
 
     await navigator.clipboard.writeText(phone);
     toast.success(`Contato de ${name} copiado`);
   }
+
+  const shouldRenderRuntimeModule =
+    (moduleKey.includes("settings") ||
+      moduleKey.includes("billing") ||
+      moduleKey.includes("subscriptions") ||
+      moduleKey.includes("notifications") ||
+      moduleKey.includes("ai") ||
+      moduleKey.includes("benefits") ||
+      moduleKey.includes("operations.index")) &&
+    !moduleKey.includes("promotions");
+  const productionModuleKey = supportsProductionPanelModule(moduleKey) ? moduleKey : null;
+  const shouldRenderProductionModule = Boolean(productionModuleKey);
 
   return (
     <>
@@ -71,16 +86,26 @@ export default function ModulePage({
         <StatCard label="Meta mensal" value={brl(settings.monthlyGoal)} tone="warning" />
       </section>
 
-      {moduleKey.includes("comissoes") && (
+      {!shouldRenderProductionModule && moduleKey.includes("comissoes") && (
         <div className="space-y-3">
           {professionals.map((professional) => (
-            <div key={professional.id} className="panel flex items-center justify-between p-4 text-sm">
-              <span>{professional.name} · {professional.commission}%</span>
+            <div
+              key={professional.id}
+              className="panel flex items-center justify-between p-4 text-sm"
+            >
+              <span>
+                {professional.name} · {professional.commission}%
+              </span>
               <span className="font-medium">
                 {brl(
                   appointments
-                    .filter((appointment) => appointment.professionalId === professional.id && appointment.status === "concluido")
-                    .reduce((sum, appointment) => sum + appointment.price, 0) * (professional.commission / 100),
+                    .filter(
+                      (appointment) =>
+                        appointment.professionalId === professional.id &&
+                        appointment.status === "concluido",
+                    )
+                    .reduce((sum, appointment) => sum + appointment.price, 0) *
+                    (professional.commission / 100),
                 )}
               </span>
             </div>
@@ -88,23 +113,32 @@ export default function ModulePage({
         </div>
       )}
 
-      {moduleKey.includes("pagamentos") && (
+      {!shouldRenderProductionModule && moduleKey.includes("pagamentos") && (
         <div className="space-y-2">
-          {transactions.filter((transaction) => transaction.type === "entrada").map((transaction) => (
-            <div key={transaction.id} className="panel flex items-center justify-between p-4 text-sm">
-              <span>{transaction.description} · {transaction.method}</span>
-              <span className="font-medium text-success">{brl(transaction.amount)}</span>
-            </div>
-          ))}
+          {transactions
+            .filter((transaction) => transaction.type === "entrada")
+            .map((transaction) => (
+              <div
+                key={transaction.id}
+                className="panel flex items-center justify-between p-4 text-sm"
+              >
+                <span>
+                  {transaction.description} · {transaction.method}
+                </span>
+                <span className="font-medium text-success">{brl(transaction.amount)}</span>
+              </div>
+            ))}
         </div>
       )}
 
-      {moduleKey.includes("comandas") && (
+      {!shouldRenderProductionModule && moduleKey.includes("comandas") && (
         <div className="space-y-3">
           {comandas.map((comanda) => (
             <div key={comanda.id} className="panel p-4 text-sm">
               <div className="flex items-center justify-between">
-                <p className="font-medium">{comanda.clientName} · {comanda.status}</p>
+                <p className="font-medium">
+                  {comanda.clientName} · {comanda.status}
+                </p>
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -114,7 +148,11 @@ export default function ModulePage({
                         await updateComandaWithItem(comanda.id);
                         toast.success("Item adicionado");
                       } catch (error) {
-                        toast.error(error instanceof Error ? error.message : "Não foi possível adicionar o item.");
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Nao foi possivel adicionar o item.",
+                        );
                       }
                     }}
                   >
@@ -128,7 +166,11 @@ export default function ModulePage({
                         await updateComandaWithPayment(comanda.id);
                         toast.success("Pagamento adicionado");
                       } catch (error) {
-                        toast.error(error instanceof Error ? error.message : "Não foi possível registrar o pagamento.");
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Nao foi possivel registrar o pagamento.",
+                        );
                       }
                     }}
                   >
@@ -142,7 +184,11 @@ export default function ModulePage({
                         await updateComandaWithStatus(comanda.id);
                         toast.success("Comanda fechada");
                       } catch (error) {
-                        toast.error(error instanceof Error ? error.message : "Não foi possível fechar a comanda.");
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Nao foi possivel fechar a comanda.",
+                        );
                       }
                     }}
                   >
@@ -151,7 +197,8 @@ export default function ModulePage({
                 </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                {comanda.items.length} itens · total {brl(comanda.items.reduce((sum, item) => sum + item.price, 0))}
+                {comanda.items.length} itens · total{" "}
+                {brl(comanda.items.reduce((sum, item) => sum + item.price, 0))}
               </p>
             </div>
           ))}
@@ -164,7 +211,9 @@ export default function ModulePage({
                 setText("");
                 toast.success("Comanda aberta");
               } catch (error) {
-                toast.error(error instanceof Error ? error.message : "Não foi possível abrir a comanda.");
+                toast.error(
+                  error instanceof Error ? error.message : "Nao foi possivel abrir a comanda.",
+                );
               }
             }}
           >
@@ -173,24 +222,32 @@ export default function ModulePage({
         </div>
       )}
 
-      {moduleKey.includes("inventory") && (
+      {!shouldRenderProductionModule && moduleKey.includes("inventory") && (
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
             <h2 className="text-lg font-medium">Estoque</h2>
             {products.map((product) => (
               <div key={product.id} className="panel flex items-center justify-between p-4 text-sm">
-                <span>{product.name} · {product.brand}</span>
+                <span>
+                  {product.name} · {product.brand}
+                </span>
                 <div className="flex items-center gap-3">
-                  <span className={product.stock <= product.minStock ? "text-destructive" : ""}>{product.stock} un</span>
+                  <span className={product.stock <= product.minStock ? "text-destructive" : ""}>
+                    {product.stock} un
+                  </span>
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={async () => {
                       try {
                         await incrementProductStock(product.id);
-                        toast.success("Movimentação registrada");
+                        toast.success("Movimentacao registrada");
                       } catch (error) {
-                        toast.error(error instanceof Error ? error.message : "Não foi possível movimentar o estoque.");
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Nao foi possivel movimentar o estoque.",
+                        );
                       }
                     }}
                   >
@@ -204,7 +261,9 @@ export default function ModulePage({
             <h2 className="text-lg font-medium">Pedidos</h2>
             {orders.map((order) => (
               <div key={order.id} className="panel flex items-center justify-between p-4 text-sm">
-                <span>{order.clientName} · {order.productName}</span>
+                <span>
+                  {order.clientName} · {order.productName}
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -213,7 +272,11 @@ export default function ModulePage({
                       await updateOrderStatus(order);
                       toast.success("Status atualizado");
                     } catch (error) {
-                      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar o pedido.");
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "Nao foi possivel atualizar o pedido.",
+                      );
                     }
                   }}
                 >
@@ -225,10 +288,14 @@ export default function ModulePage({
         </div>
       )}
 
-      {moduleKey.includes("feed") && (
+      {!shouldRenderProductionModule && moduleKey.includes("feed") && (
         <div className="space-y-4">
           <div className="panel flex gap-2 p-4">
-            <Input placeholder="Escreva um post do salão" value={text} onChange={(event) => setText(event.target.value)} />
+            <Input
+              placeholder="Escreva um post do salao"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+            />
             <Button
               onClick={async () => {
                 if (!text.trim()) {
@@ -241,7 +308,9 @@ export default function ModulePage({
                   setText("");
                   toast.success("Post publicado");
                 } catch (error) {
-                  toast.error(error instanceof Error ? error.message : "Não foi possível publicar o post.");
+                  toast.error(
+                    error instanceof Error ? error.message : "Nao foi possivel publicar o post.",
+                  );
                 }
               }}
             >
@@ -250,11 +319,15 @@ export default function ModulePage({
           </div>
           {posts.map((post) => (
             <div key={post.id} className="panel p-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">{post.format}</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                {post.format}
+              </p>
               <p className="font-medium">{post.title}</p>
               <p className="text-sm text-muted-foreground">{post.body}</p>
               <div className="mt-3 flex items-center justify-between text-xs">
-                <span>{post.likes} curtidas · {post.comments.length} comentários</span>
+                <span>
+                  {post.likes} curtidas · {post.comments.length} comentarios
+                </span>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -262,9 +335,11 @@ export default function ModulePage({
                   onClick={async () => {
                     try {
                       await deletePost(post.id);
-                      toast.success("Post excluído");
+                      toast.success("Post excluido");
                     } catch (error) {
-                      toast.error(error instanceof Error ? error.message : "Não foi possível excluir o post.");
+                      toast.error(
+                        error instanceof Error ? error.message : "Nao foi possivel excluir o post.",
+                      );
                     }
                   }}
                 >
@@ -276,13 +351,17 @@ export default function ModulePage({
         </div>
       )}
 
-      {moduleKey.includes("promotions") && (
+      {!shouldRenderProductionModule && moduleKey.includes("promotions") && (
         <div className="space-y-3">
           {promotions.map((promotion) => (
             <div key={promotion.id} className="panel flex items-center justify-between p-4 text-sm">
               <div>
-                <p className="font-medium">{promotion.name} · {promotion.discount}%</p>
-                <p className="text-xs text-muted-foreground">{promotion.channel} · {promotion.redemptions} resgates</p>
+                <p className="font-medium">
+                  {promotion.name} · {promotion.discount}%
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {promotion.channel} · {promotion.redemptions} resgates
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <Switch
@@ -292,7 +371,11 @@ export default function ModulePage({
                       await createOrUpdatePromotion({ ...promotion, active: checked });
                       toast.success(checked ? "Campanha ativada" : "Campanha pausada");
                     } catch (error) {
-                      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar a campanha.");
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "Nao foi possivel atualizar a campanha.",
+                      );
                     }
                   }}
                 />
@@ -303,9 +386,13 @@ export default function ModulePage({
                   onClick={async () => {
                     try {
                       await deletePromotion(promotion.id);
-                      toast.success("Campanha excluída");
+                      toast.success("Campanha excluida");
                     } catch (error) {
-                      toast.error(error instanceof Error ? error.message : "Não foi possível excluir a campanha.");
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "Nao foi possivel excluir a campanha.",
+                      );
                     }
                   }}
                 >
@@ -329,7 +416,9 @@ export default function ModulePage({
                 });
                 toast.success("Campanha criada");
               } catch (error) {
-                toast.error(error instanceof Error ? error.message : "Não foi possível criar a campanha.");
+                toast.error(
+                  error instanceof Error ? error.message : "Nao foi possivel criar a campanha.",
+                );
               }
             }}
           >
@@ -338,12 +427,18 @@ export default function ModulePage({
         </div>
       )}
 
-      {moduleKey.includes("birthdays") && (
+      {!shouldRenderProductionModule && moduleKey.includes("birthdays") && (
         <div className="space-y-3">
           {clients.map((client) => (
             <div key={client.id} className="panel flex items-center justify-between p-4 text-sm">
-              <span>{client.name} · {client.birthday}</span>
-              <Button size="sm" variant="outline" onClick={() => void handleCopyPhone(client.phone, client.name)}>
+              <span>
+                {client.name} · {client.birthday}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleCopyPhone(client.phone, client.name)}
+              >
                 Copiar contato
               </Button>
             </div>
@@ -351,29 +446,9 @@ export default function ModulePage({
         </div>
       )}
 
-      {((moduleKey.includes("settings") || moduleKey.includes("billing") || moduleKey.includes("subscriptions") ||
-        moduleKey.includes("notifications") || moduleKey.includes("ai") || moduleKey.includes("benefits")) &&
-        !moduleKey.includes("promotions")) && (
-        <div className="panel space-y-4 p-6">
-          <p className="text-sm text-muted-foreground">
-            Este módulo já está lendo o panorama real do salão. As rotinas operacionais específicas continuam concentradas
-            nas áreas de agenda, clientes, equipe, estoque, feed, campanhas e financeiro.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">Clientes</p>
-              <p className="mt-2 text-2xl font-semibold">{clients.length}</p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">Transações</p>
-              <p className="mt-2 text-2xl font-semibold">{transactions.length}</p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">Equipe</p>
-              <p className="mt-2 text-2xl font-semibold">{professionals.length}</p>
-            </div>
-          </div>
-        </div>
+      {productionModuleKey && <ProductionPanelModule moduleKey={productionModuleKey} />}
+      {!shouldRenderProductionModule && shouldRenderRuntimeModule && (
+        <GenericRuntimeModule moduleKey={moduleKey} />
       )}
     </>
   );

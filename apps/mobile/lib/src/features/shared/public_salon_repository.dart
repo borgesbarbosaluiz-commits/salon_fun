@@ -7,6 +7,7 @@ import '../../core/config/app_environment.dart';
 import '../../core/network/snapshot_read_cache.dart';
 import '../../core/utils/formatters.dart';
 import 'app_models.dart';
+import 'storage_asset_urls.dart';
 
 typedef CanonicalSalonLandingLoader =
     Future<Map<String, dynamic>?> Function(String joinCode);
@@ -105,7 +106,9 @@ class PublicSalonRepository {
     }
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    return SalonLandingData.fromJson(payload);
+    return SalonLandingData.fromJson(
+      _normalizeLandingPayloadAssetUrls(payload),
+    );
   }
 
   Future<SalonLandingData?> _fetchLandingFromCanonicalRpc(
@@ -116,7 +119,9 @@ class PublicSalonRepository {
       return null;
     }
 
-    return SalonLandingData.fromJson(payload);
+    return SalonLandingData.fromJson(
+      _normalizeLandingPayloadAssetUrls(payload),
+    );
   }
 
   Future<Map<String, dynamic>?> _fetchCanonicalRpcPayload(
@@ -151,6 +156,89 @@ class PublicSalonRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  Map<String, dynamic> _normalizeLandingPayloadAssetUrls(
+    Map<String, dynamic> payload,
+  ) {
+    final normalizedPayload = Map<String, dynamic>.from(payload);
+    final preview = Map<String, dynamic>.from(
+      jsonMap(normalizedPayload['preview']),
+    );
+
+    preview['logoUrl'] = _resolveAssetPathPreservingFallback(
+      bucket: 'salon-assets',
+      assetValue: preview['logoUrl'],
+    );
+    preview['heroImageUrl'] = _resolveAssetPathPreservingFallback(
+      bucket: 'salon-assets',
+      assetValue: preview['heroImageUrl'],
+    );
+    preview['galleryCoverImageUrl'] = _resolveAssetPathPreservingFallback(
+      bucket: 'salon-assets',
+      assetValue: preview['galleryCoverImageUrl'],
+    );
+    preview['profileCoverImageUrl'] = _resolveAssetPathPreservingFallback(
+      bucket: 'salon-assets',
+      assetValue: preview['profileCoverImageUrl'],
+    );
+    preview['shareImageUrl'] = _resolveAssetPathPreservingFallback(
+      bucket: 'salon-assets',
+      assetValue: preview['shareImageUrl'],
+    );
+    normalizedPayload['preview'] = preview;
+
+    normalizedPayload['featuredServices'] = _normalizeAssetList(
+      jsonMapList(normalizedPayload['featuredServices']),
+      bucket: 'salon-assets',
+      field: 'imageUrl',
+    );
+    normalizedPayload['activeOffers'] = _normalizeAssetList(
+      jsonMapList(normalizedPayload['activeOffers']),
+      bucket: 'salon-assets',
+      field: 'imageUrl',
+    );
+    normalizedPayload['recentPosts'] = _normalizeAssetList(
+      jsonMapList(normalizedPayload['recentPosts']),
+      bucket: 'salon-posts',
+      field: 'imageUrl',
+    );
+
+    return normalizedPayload;
+  }
+
+  List<Map<String, dynamic>> _normalizeAssetList(
+    List<Map<String, dynamic>> rows, {
+    required String bucket,
+    required String field,
+  }) {
+    return rows
+        .map((row) {
+          final normalizedRow = Map<String, dynamic>.from(row);
+          normalizedRow[field] = _resolveAssetPathPreservingFallback(
+            bucket: bucket,
+            assetValue: normalizedRow[field],
+          );
+          return normalizedRow;
+        })
+        .toList(growable: false);
+  }
+
+  String? _resolveAssetPathPreservingFallback({
+    required String bucket,
+    required dynamic assetValue,
+  }) {
+    final assetPath = stringOrNull(assetValue);
+    if (assetPath == null) {
+      return null;
+    }
+
+    return resolvePublicStorageAssetUrl(
+          supabaseClient,
+          bucket: bucket,
+          assetPath: assetPath,
+        ) ??
+        assetPath;
   }
 
   SalonLandingData? _mergeLandingData({
